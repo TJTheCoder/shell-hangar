@@ -66,3 +66,68 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer base {
+  /* Optional: make dark mode feel "hangar" rather than pure neutral */
+  .dark {
+    --background: 210 30% 6%;
+    --foreground: 210 15% 96%;
+    --card: 210 30% 7%;
+    --card-foreground: 210 15% 96%;
+    --popover: 210 30% 7%;
+    --popover-foreground: 210 15% 96%;
+
+    /* Reactor teal accent */
+    --primary: 174 70% 45%;
+    --primary-foreground: 210 30% 7%;
+
+    --secondary: 210 25% 12%;
+    --secondary-foreground: 210 15% 96%;
+    --muted: 210 25% 12%;
+    --muted-foreground: 210 10% 70%;
+    --accent: 210 25% 12%;
+    --accent-foreground: 210 15% 96%;
+
+    --border: 210 25% 16%;
+    --input: 210 25% 16%;
+    --ring: 174 70% 45%;
+  }
+}
+
+@layer components {
+  .hangar-bg {
+    background:
+      radial-gradient(1200px 600px at 20% 10%, hsl(var(--primary) / 0.12), transparent 55%),
+      radial-gradient(900px 500px at 80% 20%, hsl(var(--primary) / 0.08), transparent 60%),
+      linear-gradient(to bottom, hsl(var(--background)), hsl(var(--background)));
+  }
+
+  .hangar-scanlines {
+    opacity: 0.08;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.9),
+      rgba(255, 255, 255, 0.9) 1px,
+      rgba(0, 0, 0, 0) 3px,
+      rgba(0, 0, 0, 0) 6px
+    );
+    mix-blend-mode: overlay;
+  }
+
+  .hangar-panel {
+    @apply rounded-xl border border-border/70 bg-card/40 backdrop-blur-md shadow-sm;
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.08) inset,
+      0 20px 60px rgba(0, 0, 0, 0.35);
+  }
+
+  .hangar-subpanel {
+    @apply rounded-lg border border-border/70 bg-background/20 px-4 py-3;
+    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.06) inset;
+  }
+
+  .hangar-pill {
+    @apply inline-flex items-center rounded-md border border-border/70 bg-background/20 px-2.5 py-1 text-[10px] font-medium tracking-wide text-muted-foreground;
+  }
+}
+
