@@ -18,6 +18,7 @@ import { CORE_SYSTEMS } from "@/lib/systems/core-systems";
 import { FRAME_SPECS } from "@/lib/frame-specs/frame-specs";
 import { CoreSystemModal } from "@/components/core-system-modal";
 import { FrameSpecsModal } from "@/components/frame-specs-modal";
+import { CombatSection } from "@/components/combat-section";
 
 type Stats = {
   str: number;
@@ -125,7 +126,6 @@ function pickRandom<T>(arr: T[]) {
 type RollMode = "normal" | "adv" | "dis";
 
 function decrementDisabled(cond: SystemCondition): SystemCondition {
-  // Destroyed never changes via play/fast-forward
   if (cond.state === "destroyed") return cond;
   if (cond.state === "disabled") {
     const next = cond.count - 1;
@@ -387,6 +387,31 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       .map((s) => s!);
   }, [frameSpecIds]);
 
+  // Provide CombatSection with installed systems in the shape it expects.
+  const combatInstalledSystems = useMemo(() => {
+    return installedSystems
+      .map((inst) => {
+        const def = SYSTEMS.find((s) => s.id === inst.systemId);
+        if (!def) return null;
+
+        const cond = normalizeCondition(inst.condition);
+        return {
+          id: def.id,
+          name: def.name,
+          description: def.description ?? "",
+          tags: sortedTags(def.tags),
+          condition: cond.state === "ok" ? undefined : { state: cond.state },
+        };
+      })
+      .filter(Boolean) as Array<{
+      id: string;
+      name: string;
+      description: string;
+      tags: string[];
+      condition?: { state?: "disabled" | "destroyed" };
+    }>;
+  }, [installedSystems]);
+
   // ---------- Instability rolling ----------
   const getRollModeFor = (slot: StructureKey): RollMode => {
     if (slot === "core") return "dis";
@@ -451,15 +476,15 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
     // Core: structure only, not core system
     if (slot === "core") {
-      const curNow = normalizeCondition(structureState.core);
+      const cur = normalizeCondition(structureState.core);
 
       const nextCore =
         result === 1
-          ? ({ state: remindingDestroyed(curNow) ? "destroyed" : "destroyed" } as SystemCondition)
-          : curNow.state === "destroyed"
-            ? curNow
-            : curNow.state === "disabled"
-              ? ({ state: "disabled", count: curNow.count + 1 } as SystemCondition)
+          ? ({ state: "destroyed" } as SystemCondition)
+          : cur.state === "destroyed"
+            ? cur
+            : cur.state === "disabled"
+              ? ({ state: "disabled", count: cur.count + 1 } as SystemCondition)
               : ({ state: "disabled", count: 2 } as SystemCondition);
 
       setStructureState((prev) => ({ ...prev, core: nextCore }));
@@ -467,8 +492,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       const outcome =
         result === 1
           ? "Destroyed"
-          : curNow.state === "disabled"
-            ? `Disabled: ${curNow.count + 1}`
+          : cur.state === "disabled"
+            ? `Disabled: ${cur.count + 1}`
             : "Disabled: 2";
 
       setInstabilityPopup({
@@ -558,11 +583,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       body: `${rollHeader}\n${sysName} is now ${outcome}.`,
     });
   };
-
-  function remindingDestroyed(_c: SystemCondition) {
-    // Helper only to keep TS happy if you later special-case; currently always returns false.
-    return false;
-  }
 
   // ---------- Load ----------
   useEffect(() => {
@@ -803,45 +823,39 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       curBuffer = t.nextBuffer;
       totalExpired += t.expired;
     } else {
-        // fast-forward:
-        // - if Disabled exists, advance until all Disabled cleared (stop if buffer expires)
-        // - if no Disabled exists, advance until buffer expires something (stop) or buffer is empty
-        const startHadDisabled = hasAnyDisabled(curSys, curStruct);
+      const startHadDisabled = hasAnyDisabled(curSys, curStruct);
 
-        if (!startHadDisabled) {
+      if (!startHadDisabled) {
         while (curBuffer.length > 0) {
-            const t = tickOnce(curSys, curStruct, curBuffer);
-            curSys = t.nextSystems;
-            curStruct = t.nextStructures;
-            curBuffer = t.nextBuffer;
+          const t = tickOnce(curSys, curStruct, curBuffer);
+          curSys = t.nextSystems;
+          curStruct = t.nextStructures;
+          curBuffer = t.nextBuffer;
 
-            if (t.expired > 0) {
+          if (t.expired > 0) {
             totalExpired += t.expired;
-            break; // triggers Critical Warning popup after loop
-            }
+            break;
+          }
         }
-        } else {
+      } else {
         while (hasAnyDisabled(curSys, curStruct)) {
-            const t = tickOnce(curSys, curStruct, curBuffer);
-            curSys = t.nextSystems;
-            curStruct = t.nextStructures;
-            curBuffer = t.nextBuffer;
+          const t = tickOnce(curSys, curStruct, curBuffer);
+          curSys = t.nextSystems;
+          curStruct = t.nextStructures;
+          curBuffer = t.nextBuffer;
 
-            if (t.expired > 0) {
+          if (t.expired > 0) {
             totalExpired += t.expired;
-            break; // interrupt fast-forward on buffer expiry
-            }
+            break;
+          }
         }
-        }
+      }
     }
 
-
-    // Apply locally
     setInstalledSystems(curSys);
     setStructureState(curStruct);
     setInstabilityBuffer(curBuffer);
 
-    // Persist immediately
     await saveWithOverrides({
       installed_systems: curSys,
       structure_state: curStruct,
@@ -892,7 +906,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         </div>
       )}
 
-      {/* Instability result popup */}
       {instabilityPopup.open && (
         <Modal
           title={instabilityPopup.title}
@@ -901,7 +914,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         />
       )}
 
-      {/* Buffer critical popup */}
       {bufferCriticalPopup.open && (
         <Modal
           title="CRITICAL WARNING!"
@@ -1062,7 +1074,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                   value={`${damageThreshold} (${fmtSigned(damageThresholdBonus)})`}
                 />
 
-                {/* Spares current/max */}
                 <div className="flex items-center justify-between rounded-md border bg-card/40 px-3 py-2">
                   <div>Spares</div>
                   <div className="flex items-center gap-2">
@@ -1113,7 +1124,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                 <Row label="Sensors Range" value={`${sensorsRangeFt} ft`} />
               </div>
 
-              {/* NEW: Immunities section */}
               <div className="mt-6 text-sm font-semibold">Immunities</div>
               <div className="mt-3 grid gap-2">
                 <div className="rounded-md border bg-card/40 px-3 py-2 text-sm">
@@ -1531,6 +1541,16 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         </Card>
       )}
 
+      {/* Combat */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Combat</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CombatSection installedSystems={combatInstalledSystems} />
+        </CardContent>
+      </Card>
+
       {/* Bottom controls (very bottom) */}
       <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/80 backdrop-blur">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-end gap-3 p-3">
@@ -1549,7 +1569,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             size="icon"
             onClick={() => advanceTurns("fast")}
             disabled={loading || saving || advancing}
-            title="Fast-forward until all Disabled cleared (stops if buffer expires)"
+            title="Fast-forward (stops if buffer expires)"
           >
             <FastForward className="h-4 w-4" />
           </Button>
@@ -1570,7 +1590,13 @@ function Modal(props: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-md rounded-xl border bg-card p-4 shadow">
-        <div className={props.emphasis ? "text-lg font-semibold text-destructive" : "text-lg font-semibold"}>
+        <div
+          className={
+            props.emphasis
+              ? "text-lg font-semibold text-destructive"
+              : "text-lg font-semibold"
+          }
+        >
           {props.title}
         </div>
         <div className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
@@ -1604,7 +1630,9 @@ function AuxCard(props: {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-base font-semibold">{props.title}</div>
-          <div className="mt-1 text-xs text-muted-foreground">{props.contribution}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {props.contribution}
+          </div>
         </div>
         <div className="text-2xl font-semibold tabular-nums">{props.value}</div>
       </div>
@@ -1644,7 +1672,8 @@ function CoreSection(props: {
   onRepair: () => void;
 }) {
   const status = conditionLabel(props.condition);
-  const showRepair = props.condition.state === "disabled" || props.condition.state === "destroyed";
+  const showRepair =
+    props.condition.state === "disabled" || props.condition.state === "destroyed";
 
   return (
     <div className="relative rounded-lg border bg-background/20 px-4 py-3">
@@ -1666,7 +1695,9 @@ function CoreSection(props: {
               </span>
             )}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">{props.subtitle}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {props.subtitle}
+          </div>
         </button>
 
         <div className="flex flex-col items-end gap-2">
@@ -1743,7 +1774,8 @@ function SectionWithInstabilityConfirm(props: {
   onClick: () => void;
 }) {
   const status = conditionLabel(props.condition);
-  const showRepair = props.condition.state === "disabled" || props.condition.state === "destroyed";
+  const showRepair =
+    props.condition.state === "disabled" || props.condition.state === "destroyed";
 
   return (
     <div className="relative rounded-lg border bg-background/20 px-4 py-3">
@@ -1765,7 +1797,9 @@ function SectionWithInstabilityConfirm(props: {
               </span>
             )}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">{props.subtitle}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {props.subtitle}
+          </div>
         </button>
 
         <div className="flex flex-col items-end gap-2">
