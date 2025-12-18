@@ -109,6 +109,13 @@ export const BASE_ACTIONS: CombatAction[] = [
       "You mend yourself using Spares, either using 1 Spare to restore a destroyed/disabled system, 2 Spares to restore a destroyed/disabled non-Core structure, or 4 Spares to restore a destroyed/disabled Core.",
   },
   {
+    id: "gossamer-veil",
+    name: "Gossamer Veil",
+    type: "AP2",
+    description:
+      "You de-quantize the glox spool attached to your back, forcing a creature within 10 ft. to make a CHA save. On a failed save, a wave-particle domain envelops you and your target, rendering you both unable to interact with any other creature. The effect ends when your Back is disabled/destroyed, you end it at will, or when the field itself is attacked. The field can be attacked when an external creature uses an attack that targets either you or the target or when the target attacks any space around them that isn't occupied by you. To destroy the field, which shares your immunities, damage equivalent to twice your Damage Threshold must be dealt in one instance of damage.",
+  },
+  {
     id: "guard",
     name: "Guard",
     type: "REACTION",
