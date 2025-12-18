@@ -86,7 +86,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const [shellName, setShellName] = useState("");
   const [stats, setStats] = useState<Stats>(DEFAULT_STATS);
 
-  // choose two save proficiencies
+  // choose two of six stats to gain save proficiency
   const [saveProfs, setSaveProfs] = useState<AbilityKey[]>([]);
 
   // Core system
@@ -165,7 +165,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const damageThresholdBonus = fort * 2;
   const sparesBonus = Math.floor(fort / 2);
 
-  const acBonus = agility;
+  const armorClassBonus = agility; // (formerly AC)
   const moveSpeedBonusFt = Math.floor(agility / 2) * 10;
 
   const saveDCBonus = techno;
@@ -175,12 +175,30 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const bufferSizeBonus = internal;
   const bufferDurationBonus = Math.floor(internal / 2);
 
+  // IMPORTANT RULE UPDATE: Buffer Duration has base value 1 (minimum 1).
+  const bufferDuration = Math.max(1, 1 + bufferDurationBonus);
+
+  // Tactical Profile base stats
+  const baseDamageThreshold = 16;
+  const baseSpares = 5;
+  const baseAttackBonus = 6;
+  const baseMoveSpeedFt = 40;
+  const baseArmorClass = 8;
+  const baseSaveDC = 10;
+  const sensorsRangeFt = 100;
+
+  const damageThreshold = baseDamageThreshold + damageThresholdBonus;
+  const spares = baseSpares + sparesBonus;
+  const attackBonus = baseAttackBonus;
+  const movementSpeedFt = baseMoveSpeedFt + moveSpeedBonusFt;
+  const armorClass = baseArmorClass + armorClassBonus;
+  const saveDC = baseSaveDC + saveDCBonus;
+  const forwardSaveBonus = saveDC - 10; // requested: +(Save DC - 10)
+
   const saveBonus = (key: AbilityKey) =>
     abilityMod(stats[key]) + (saveProfs.includes(key) ? PROF_BONUS : 0);
 
   const skillBonus = (key: AbilityKey) => abilityMod(stats[key]) + PROF_BONUS;
-
-  const sensorsRangeFt = 100;
 
   // Systems caps
   const TOTAL_CAP = 19 + systemCapacityBonus;
@@ -197,11 +215,10 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
   const onFillOne = () => {
     if (!canFill) return;
-    setInstabilityBuffer((prev) => [...prev, bufferDurationBonus]);
+    setInstabilityBuffer((prev) => [...prev, bufferDuration]);
   };
 
-  // Per your wording: “first hex is unfilled and everything moved over”
-  // That implies removing the earliest filled cell (shift).
+  // per your wording: remove the first filled hex and shift remaining left
   const onUnfillOne = () => {
     if (!canUnfill) return;
     setInstabilityBuffer((prev) => prev.slice(1));
@@ -381,7 +398,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
       installed_systems: installedSystems,
 
-      // new persistence
       instability_buffer: normalizedBuffer,
 
       updated_at: new Date().toISOString(),
@@ -399,6 +415,10 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
     setSaving(false);
   };
+
+  // Instability Buffer layout: compact when empty
+  const showInstabilityBuffer = bufferSizeBonus >= 1;
+  const instabilityCompact = filledCount === 0;
 
   return (
     <div className="flex w-full flex-col gap-6">
@@ -520,7 +540,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         </CardContent>
       </Card>
 
-      {/* Derived Attributes (redesigned) */}
+      {/* Derived Attributes */}
       <Card>
         <CardHeader>
           <CardTitle>Derived Attributes</CardTitle>
@@ -533,12 +553,12 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               contribution="Contrib: STR + CON + CHA (per 3)"
               bonuses={[
                 {
-                  label: "Damage Threshold",
+                  label: "Damage Threshold Bonus",
                   value: fmtSigned(damageThresholdBonus),
                   detail: "+2 per Fort",
                 },
                 {
-                  label: "Spares",
+                  label: "Spares Bonus",
                   value: fmtSigned(sparesBonus),
                   detail: "+1 per 2 Fort",
                 },
@@ -550,9 +570,13 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               value={agility}
               contribution="Contrib: 2×DEX + WIS (per 3)"
               bonuses={[
-                { label: "AC", value: fmtSigned(acBonus), detail: "+1 per Agility" },
                 {
-                  label: "Movement Speed",
+                  label: "Armor Class Bonus",
+                  value: fmtSigned(armorClassBonus),
+                  detail: "+1 per Agility",
+                },
+                {
+                  label: "Movement Speed Bonus",
                   value:
                     moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`,
                   detail: "+10 ft per 2 Agility",
@@ -565,14 +589,18 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               value={techno}
               contribution="Contrib: INT + WIS + CHA (per 3)"
               bonuses={[
-                { label: "Save DC", value: fmtSigned(saveDCBonus), detail: "+1 per Techno" },
                 {
-                  label: "Saving Throws",
+                  label: "Save DC Bonus",
+                  value: fmtSigned(saveDCBonus),
+                  detail: "+1 per Techno",
+                },
+                {
+                  label: "Saving Throws Bonus",
                   value: fmtSigned(savingThrowsBonus),
                   detail: "+1 per Techno",
                 },
                 {
-                  label: "System Capacity",
+                  label: "System Capacity Bonus",
                   value: fmtSigned(systemCapacityBonus),
                   detail: "+1 per 2 Techno",
                 },
@@ -585,44 +613,71 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               contribution="Contrib: STR + CON + INT (per 3)"
               bonuses={[
                 {
-                  label: "Buffer Size",
+                  label: "Buffer Size Bonus",
                   value: fmtSigned(bufferSizeBonus),
                   detail: "+1 per Internal",
                 },
                 {
-                  label: "Buffer Duration",
+                  label: "Buffer Duration Bonus",
                   value: fmtSigned(bufferDurationBonus),
                   detail: "+1 per 2 Internal",
                 },
               ]}
             />
           </div>
-
-          <div className="mt-4 text-xs text-muted-foreground">
-            All tertiary bonuses are shown even when 0.
-          </div>
         </CardContent>
       </Card>
 
-      {/* Proficiencies & Sensors */}
+      {/* Tactical Profile */}
       <Card>
         <CardHeader>
-          <CardTitle>Proficiencies & Sensors</CardTitle>
+          <CardTitle>Tactical Profile</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-6 lg:grid-cols-2">
             <div className="rounded-lg border bg-background/20 p-4">
-              <div className="flex items-baseline justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold">Saving Throws</div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Choose exactly two save proficiencies. Proficiency bonus is{" "}
-                    {fmtSigned(PROF_BONUS)}.
-                  </div>
-                </div>
-                <div className="text-xs text-muted-foreground tabular-nums">
-                  Selected: {saveProfs.length}/2
-                </div>
+              <div className="text-sm font-semibold">Vitals</div>
+              <div className="mt-3 grid gap-2">
+                <Row
+                  label="Damage Threshold"
+                  value={`${damageThreshold} (${fmtSigned(damageThresholdBonus)})`}
+                />
+                <Row label="Spares" value={`${spares} (${fmtSigned(sparesBonus)})`} />
+              </div>
+
+              <div className="mt-6 text-sm font-semibold">Mobility & Defense</div>
+              <div className="mt-3 grid gap-2">
+                <Row
+                  label="Movement Speed"
+                  value={`${movementSpeedFt} ft (${moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`})`}
+                />
+                <Row
+                  label="Armor Class"
+                  value={`${armorClass} (${fmtSigned(armorClassBonus)})`}
+                />
+              </div>
+
+              <div className="mt-6 text-sm font-semibold">Offense & Control</div>
+              <div className="mt-3 grid gap-2">
+                <Row label="Attack Bonus" value={fmtSigned(attackBonus)} />
+                <Row label="Save DC" value={`${saveDC} (${fmtSigned(saveDCBonus)})`} />
+                <Row
+                  label="Forward Save Bonus"
+                  value={fmtSigned(forwardSaveBonus)}
+                />
+              </div>
+
+              <div className="mt-6 text-sm font-semibold">Sensors</div>
+              <div className="mt-3 grid gap-2">
+                <Row label="Sensors Range" value={`${sensorsRangeFt} ft`} />
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-background/20 p-4">
+              <div className="text-sm font-semibold">Saving Throws</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Choose exactly two save proficiencies. Proficiency bonus is{" "}
+                {fmtSigned(PROF_BONUS)}.
               </div>
 
               <div className="mt-4 grid gap-2">
@@ -670,10 +725,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                   );
                 })}
               </div>
-            </div>
 
-            <div className="rounded-lg border bg-background/20 p-4">
-              <div className="text-sm font-semibold">Skills</div>
+              <div className="mt-6 text-sm font-semibold">Skills</div>
               <div className="mt-1 text-xs text-muted-foreground">
                 Shells are proficient in Athletics, Acrobatics, Perception, and
                 Stealth. Proficiency bonus is {fmtSigned(PROF_BONUS)}.
@@ -685,22 +738,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                 <Row label="Perception (WIS)" value={fmtSigned(skillBonus("wis"))} />
                 <Row label="Stealth (DEX)" value={fmtSigned(skillBonus("dex"))} />
               </div>
-
-              <div className="mt-6">
-                <div className="text-sm font-semibold">Sensors</div>
-                <div className="mt-2 flex items-center justify-between rounded-md border bg-card/40 px-3 py-2">
-                  <div>Range</div>
-                  <div className="font-medium tabular-nums">
-                    {sensorsRangeFt} ft
-                  </div>
-                </div>
-              </div>
             </div>
-          </div>
-
-          <div className="mt-4 text-xs text-muted-foreground">
-            Saving throws use D&D-style ability modifiers. Listed skills are
-            always proficient.
           </div>
         </CardContent>
       </Card>
@@ -778,8 +816,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             <div className="rounded-md border bg-background/20 p-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm text-muted-foreground">
-                  Per-site cap: {PER_SLOT_CAP}. Total cap: {TOTAL_CAP} (19 +
-                  System Capacity).
+                  Per-site cap: {PER_SLOT_CAP}. Total cap: {TOTAL_CAP}.
                 </div>
                 <div className="text-sm font-medium tabular-nums">
                   Total Installed Cost: {getTotalCost()}/{TOTAL_CAP}
@@ -864,6 +901,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                     const cost = def?.cost ?? getSystemCost(inst.systemId);
                     const slotLabel = SLOT_LABELS[inst.slot];
                     const tags = sortedTags(def?.tags);
+                    const description = def?.description ?? "";
 
                     return (
                       <div
@@ -871,7 +909,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                         className="rounded-md border bg-card/40 px-3 py-2"
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <div>
+                          <div className="min-w-0">
                             <div className="text-sm font-medium">{name}</div>
                             <div className="text-xs text-muted-foreground">
                               Slot: {slotLabel} · Cost: {cost}
@@ -887,6 +925,12 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                                     {t}
                                   </span>
                                 ))}
+                              </div>
+                            )}
+
+                            {description && (
+                              <div className="mt-2 text-xs text-muted-foreground">
+                                {description}
                               </div>
                             )}
                           </div>
@@ -924,22 +968,18 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         </CardContent>
       </Card>
 
-      {/* Instability Buffer (only if Buffer Size >= 1) */}
-      {bufferSizeBonus >= 1 && (
+      {/* Instability Buffer */}
+      {showInstabilityBuffer && (
         <Card>
-          <CardHeader>
+          <CardHeader className={instabilityCompact ? "py-4" : undefined}>
             <CardTitle>Instability Buffer</CardTitle>
           </CardHeader>
-          <CardContent>
+
+          <CardContent className={instabilityCompact ? "pt-0" : undefined}>
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background/20 p-3">
               <div>
                 <div className="text-sm font-semibold">
-                  Buffer Size {bufferSizeBonus} · Buffer Duration{" "}
-                  {bufferDurationBonus}
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Fill adds duration into the next hex. Unfill removes the first
-                  filled hex and shifts the rest left.
+                  Buffer Size {bufferSizeBonus} · Buffer Duration {bufferDuration}
                 </div>
               </div>
 
@@ -954,22 +994,22 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                 <div className="text-sm tabular-nums">
                   {filledCount}/{bufferSizeBonus}
                 </div>
-                <Button
-                  onClick={onFillOne}
-                  disabled={loading || !canFill}
-                >
+                <Button onClick={onFillOne} disabled={loading || !canFill}>
                   +
                 </Button>
               </div>
             </div>
 
-            <div className="mt-4">
-              <HexGrid
-                total={bufferSizeBonus}
-                filledValues={instabilityBuffer}
-                perRow={8}
-              />
-            </div>
+            {/* Compact when empty: keep the section small by not rendering the grid until used */}
+            {filledCount > 0 && (
+              <div className="mt-4">
+                <HexGrid
+                  total={bufferSizeBonus}
+                  filledValues={instabilityBuffer}
+                  perRow={8}
+                />
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -1060,7 +1100,6 @@ function HexGrid(props: {
     return { filled, value, key: i };
   });
 
-  // use CSS grid; 8 per row as requested
   return (
     <div
       className="grid gap-2"
