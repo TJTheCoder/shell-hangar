@@ -36,10 +36,12 @@ type SystemCondition =
 type InstalledSystem = {
   systemId: string;
   slot: SystemSlot;
-  condition?: SystemCondition; // default ok
+  condition?: SystemCondition;
 };
 
-type StructureState = Record<SystemSlot, SystemCondition>;
+// Structures include the 5 slots + Core (stored in structure_state JSON)
+type StructureKey = SystemSlot | "core";
+type StructureState = Record<StructureKey, SystemCondition>;
 
 const STAT_DEFS: Array<{ key: AbilityKey; label: string; short: string }> = [
   { key: "str", label: "Strength", short: "STR" },
@@ -95,7 +97,10 @@ function normalizeCondition(input: any): SystemCondition {
   if (input.state === "destroyed") return { state: "destroyed" };
   if (input.state === "disabled") {
     const c = Number(input.count);
-    return { state: "disabled", count: Number.isFinite(c) ? Math.max(1, Math.trunc(c)) : 1 };
+    return {
+      state: "disabled",
+      count: Number.isFinite(c) ? Math.max(1, Math.trunc(c)) : 1,
+    };
   }
   return { state: "ok" };
 }
@@ -107,8 +112,6 @@ function conditionLabel(c: SystemCondition) {
 }
 
 function isEligibleForTarget(c: SystemCondition) {
-  // Eligible means: can be disabled/destroyed
-  // Destroyed should not be selected again (keeps targeting meaningful)
   return c.state !== "destroyed";
 }
 
@@ -117,6 +120,8 @@ function pickRandom<T>(arr: T[]) {
   const idx = Math.floor(Math.random() * arr.length);
   return arr[idx];
 }
+
+type RollMode = "normal" | "adv" | "dis";
 
 export function ShellCharacterCreator({ userId }: { userId: string }) {
   const supabase = useMemo(() => createClient(), []);
@@ -136,17 +141,22 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const [frameSpecsOpen, setFrameSpecsOpen] = useState(false);
 
   // Systems
-  const [installedSystems, setInstalledSystems] = useState<InstalledSystem[]>([]);
+  const [installedSystems, setInstalledSystems] = useState<InstalledSystem[]>(
+    [],
+  );
+
   const [structureState, setStructureState] = useState<StructureState>({
     hull: { state: "ok" },
     left_arm: { state: "ok" },
     right_arm: { state: "ok" },
     legs: { state: "ok" },
     back: { state: "ok" },
+    core: { state: "ok" },
   });
 
   const [catalogueOpen, setCatalogueOpen] = useState(false);
-  const [catalogueDefaultSlot, setCatalogueDefaultSlot] = useState<SystemSlot>("hull");
+  const [catalogueDefaultSlot, setCatalogueDefaultSlot] =
+    useState<SystemSlot>("hull");
 
   // Instability Buffer (array of filled hex values)
   const [instabilityBuffer, setInstabilityBuffer] = useState<number[]>([]);
@@ -157,6 +167,12 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     title: string;
     body: string;
   }>({ open: false, title: "", body: "" });
+
+  // Pending confirm per-slot (replaces window.confirm)
+  const [pendingInstability, setPendingInstability] = useState<StructureKey | null>(null);
+
+  // Tactical Profile: Spares current (saved)
+  const [sparesCurrent, setSparesCurrent] = useState<number | null>(null);
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -218,14 +234,14 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const armorClassBonus = agility;
   const moveSpeedBonusFt = Math.floor(agility / 2) * 10;
 
-  // CHANGE 1: Techno no longer grants Saving Throws Bonus
+  // Item 1 previously: Techno no longer grants any saving-throw bonus (already removed)
   const saveDCBonus = techno;
   const systemCapacityBonus = Math.floor(techno / 2);
 
   const bufferSizeBonus = internal;
   const bufferDurationBonus = Math.floor(internal / 2);
 
-  // Buffer Duration has base value 1 (minimum 1).
+  // Buffer Duration base is 1 (min 1)
   const bufferDuration = Math.max(1, 1 + bufferDurationBonus);
 
   // Tactical Profile base stats
@@ -238,12 +254,29 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const sensorsRangeFt = 100;
 
   const damageThreshold = baseDamageThreshold + damageThresholdBonus;
-  const spares = baseSpares + sparesBonus;
+  const sparesMax = baseSpares + sparesBonus;
   const attackBonus = baseAttackBonus;
   const movementSpeedFt = baseMoveSpeedFt + moveSpeedBonusFt;
   const armorClass = baseArmorClass + armorClassBonus;
   const saveDC = baseSaveDC + saveDCBonus;
   const forwardSaveBonus = saveDC - 10;
+
+  // Initialize spares current to max (default) and clamp on max changes
+  useEffect(() => {
+    setSparesCurrent((prev) => {
+      if (prev === null || prev === undefined) return sparesMax;
+      return clamp(prev, 0, sparesMax);
+    });
+  }, [sparesMax]);
+
+  const incSpares = () =>
+    setSparesCurrent((prev) =>
+      prev === null ? sparesMax : clamp(prev + 1, 0, sparesMax),
+    );
+  const decSpares = () =>
+    setSparesCurrent((prev) =>
+      prev === null ? 0 : clamp(prev - 1, 0, sparesMax),
+    );
 
   const saveBonus = (key: AbilityKey) =>
     abilityMod(stats[key]) + (saveProfs.includes(key) ? PROF_BONUS : 0);
@@ -324,7 +357,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     );
   };
 
-  const repairStructure = (slot: SystemSlot) => {
+  const repairStructure = (slot: StructureKey) => {
     setStructureState((prev) => ({ ...prev, [slot]: { state: "ok" } }));
   };
 
@@ -342,22 +375,47 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   }, [frameSpecIds]);
 
   // ---------- Instability rolling ----------
-  const rollInstability = async (slot: SystemSlot) => {
-    const ok = window.confirm(
-      `Apply an instability to ${SLOT_LABELS[slot]}?\n\nThis will roll a d6.`,
-    );
-    if (!ok) return;
+  const getRollModeFor = (slot: StructureKey): RollMode => {
+    if (slot === "core") return "dis"; // always disadvantage (cannot be removed)
+    if (slot === "hull") {
+      // Item 2: Hull rolls with advantage unless Hull is disabled
+      const hull = structureState.hull;
+      if (hull.state === "disabled") return "normal";
+      return "adv";
+    }
+    return "normal";
+  };
 
+  const rollInstability = async (slot: StructureKey) => {
     setError(null);
 
-    let roll: number | null = null;
+    const mode = getRollModeFor(slot);
+
+    let rolls: number[] = [];
+    let result: number | null = null;
 
     try {
-      const res = await fetch("/api/instability", { method: "POST" });
+      const res = await fetch("/api/instability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
       if (!res.ok) throw new Error(`Instability roll failed (${res.status})`);
-      const json = (await res.json()) as { roll: number };
-      roll = Number(json.roll);
-      if (!Number.isFinite(roll) || roll < 1 || roll > 6) {
+      const json = (await res.json()) as {
+        mode: RollMode;
+        rolls: number[];
+        result: number;
+      };
+
+      rolls = Array.isArray(json.rolls) ? json.rolls.map(Number) : [];
+      result = Number(json.result);
+
+      if (
+        !Number.isFinite(result) ||
+        result < 1 ||
+        result > 6 ||
+        rolls.some((r) => !Number.isFinite(r) || r < 1 || r > 6)
+      ) {
         throw new Error("Invalid roll result returned by backend.");
       }
     } catch (e: any) {
@@ -366,21 +424,59 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     }
 
     // Apply result
-    if (roll >= 4) {
+    const rollHeader =
+      rolls.length === 2
+        ? `${mode === "adv" ? "Advantage" : "Disadvantage"}: [${rolls[0]}, ${rolls[1]}] → ${result}`
+        : `Roll: ${result}`;
+
+    if (result >= 4) {
       setInstabilityPopup({
         open: true,
-        title: `Instability Roll: ${roll}`,
-        body: "No effect.",
+        title: `Instability (${slot === "core" ? "Core" : SLOT_LABELS[slot]})`,
+        body: `${rollHeader}\nNo effect.`,
       });
       return;
     }
 
-    // Candidate systems in the slot, excluding destroyed
+    // Core is special: applies to core structure only (not core system)
+    if (slot === "core") {
+      setStructureState((prev) => {
+        const cur = normalizeCondition(prev.core);
+
+        if (result === 1) {
+          return { ...prev, core: { state: "destroyed" } };
+        }
+
+        // 2-3 disabled / increment
+        if (cur.state === "disabled") {
+          return { ...prev, core: { state: "disabled", count: cur.count + 1 } };
+        }
+        if (cur.state === "destroyed") return prev;
+        return { ...prev, core: { state: "disabled", count: 2 } };
+      });
+
+      const cur = normalizeCondition(structureState.core);
+      const outcome =
+        result === 1
+          ? "Destroyed"
+          : cur.state === "disabled"
+            ? `Disabled: ${cur.count + 1}`
+            : "Disabled: 2";
+
+      setInstabilityPopup({
+        open: true,
+        title: `Instability (Core)`,
+        body: `${rollHeader}\nCore structure is now ${outcome}.`,
+      });
+      return;
+    }
+
+    // Non-core: target systems in slot first; if none, apply to structure
     const candidates = installedSystems
       .filter((s) => s.slot === slot)
       .map((s) => ({
         ...s,
-        condition: s.condition ? normalizeCondition(s.condition) : { state: "ok" as const },
+        condition: s.condition ? normalizeCondition(s.condition) : ({ state: "ok" } as const),
       }))
       .filter((s) => isEligibleForTarget(s.condition!));
 
@@ -389,32 +485,28 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     const applyToStructure = () => {
       setStructureState((prev) => {
         const cur = normalizeCondition(prev[slot]);
-        if (roll === 1) return { ...prev, [slot]: { state: "destroyed" } };
 
-        // roll 2-3 => disabled (increment if already disabled)
+        if (result === 1) return { ...prev, [slot]: { state: "destroyed" } };
+
         if (cur.state === "disabled") {
           return { ...prev, [slot]: { state: "disabled", count: cur.count + 1 } };
         }
-        if (cur.state === "destroyed") {
-          return prev; // already destroyed
-        }
+        if (cur.state === "destroyed") return prev;
         return { ...prev, [slot]: { state: "disabled", count: 2 } };
       });
 
-      const label =
-        roll === 1
+      const cur = normalizeCondition(structureState[slot]);
+      const outcome =
+        result === 1
           ? "Destroyed"
-          : "Disabled" +
-            (() => {
-              const cur = normalizeCondition(structureState[slot]);
-              if (cur.state === "disabled") return `: ${cur.count + 1}`;
-              return ": 2";
-            })();
+          : cur.state === "disabled"
+            ? `Disabled: ${cur.count + 1}`
+            : "Disabled: 2";
 
       setInstabilityPopup({
         open: true,
-        title: `Instability Roll: ${roll}`,
-        body: `No eligible systems. ${SLOT_LABELS[slot]} structure is now ${label}.`,
+        title: `Instability (${SLOT_LABELS[slot]})`,
+        body: `${rollHeader}\nNo eligible systems. ${SLOT_LABELS[slot]} structure is now ${outcome}.`,
       });
     };
 
@@ -431,34 +523,27 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         if (s.systemId !== targetSystem.systemId) return s;
 
         const cur = normalizeCondition(s.condition);
-        if (roll === 1) {
+
+        if (result === 1) {
           return { ...s, condition: { state: "destroyed" } };
         }
 
-        // roll 2-3
         if (cur.state === "disabled") {
           return { ...s, condition: { state: "disabled", count: cur.count + 1 } };
         }
-        if (cur.state === "destroyed") {
-          return s;
-        }
+        if (cur.state === "destroyed") return s;
         return { ...s, condition: { state: "disabled", count: 2 } };
       }),
     );
 
+    const cur = normalizeCondition(targetSystem.condition);
     const outcome =
-      roll === 1
-        ? "Destroyed"
-        : (() => {
-            const cur = normalizeCondition(targetSystem.condition);
-            if (cur.state === "disabled") return `Disabled: ${cur.count + 1}`;
-            return "Disabled: 2";
-          })();
+      result === 1 ? "Destroyed" : cur.state === "disabled" ? `Disabled: ${cur.count + 1}` : "Disabled: 2";
 
     setInstabilityPopup({
       open: true,
-      title: `Instability Roll: ${roll}`,
-      body: `${sysName} on ${SLOT_LABELS[slot]} is now ${outcome}.`,
+      title: `Instability (${SLOT_LABELS[slot]})`,
+      body: `${rollHeader}\n${sysName} is now ${outcome}.`,
     });
   };
 
@@ -474,7 +559,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       const { data, error } = await supabase
         .from("characters")
         .select(
-          "shell_name,str,dex,con,int,wis,cha,save_prof_1,save_prof_2,installed_systems,core_system_id,frame_specs,instability_buffer,structure_state",
+          "shell_name,str,dex,con,int,wis,cha,save_prof_1,save_prof_2,installed_systems,core_system_id,frame_specs,instability_buffer,structure_state,spares_current",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -549,6 +634,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             right_arm: normalizeCondition(rawStructureState.right_arm),
             legs: normalizeCondition(rawStructureState.legs),
             back: normalizeCondition(rawStructureState.back),
+            core: normalizeCondition(rawStructureState.core),
           });
         } else {
           setStructureState({
@@ -557,7 +643,16 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             right_arm: { state: "ok" },
             legs: { state: "ok" },
             back: { state: "ok" },
+            core: { state: "ok" },
           });
+        }
+
+        const sc = (data as any).spares_current;
+        if (Number.isFinite(Number(sc))) {
+          setSparesCurrent(Math.max(0, Math.trunc(Number(sc))));
+        } else {
+          // default = max (will be clamped by effect)
+          setSparesCurrent(null);
         }
       } else {
         setShellName("");
@@ -573,7 +668,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
           right_arm: { state: "ok" },
           legs: { state: "ok" },
           back: { state: "ok" },
+          core: { state: "ok" },
         });
+        setSparesCurrent(null);
       }
 
       setLoading(false);
@@ -606,10 +703,10 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       frame_specs: frameSpecIds.slice(0, 4),
 
       installed_systems: installedSystems,
-
       instability_buffer: normalizedBuffer,
-
       structure_state: structureState,
+
+      spares_current: sparesCurrent === null ? sparesMax : clamp(sparesCurrent, 0, sparesMax),
 
       updated_at: new Date().toISOString(),
     };
@@ -628,10 +725,12 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   };
 
   // Instability Buffer layout behavior:
-  // - hidden when filledCount=0 (compact)
-  // - shows only rows necessary for the filled count (row-by-row), not full buffer size
   const showInstabilityBuffer = bufferSizeBonus >= 1;
   const instabilityCompact = filledCount === 0;
+
+  // Core instability allowed ONLY when Hull is destroyed
+  const hullDestroyed = structureState.hull.state === "destroyed";
+  const coreInstabilityEnabled = hullDestroyed;
 
   return (
     <div className="flex w-full flex-col gap-6">
@@ -667,9 +766,13 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-xl border bg-card p-4 shadow">
             <div className="text-lg font-semibold">{instabilityPopup.title}</div>
-            <div className="mt-2 text-sm text-muted-foreground">{instabilityPopup.body}</div>
+            <div className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
+              {instabilityPopup.body}
+            </div>
             <div className="mt-4 flex justify-end">
-              <Button onClick={() => setInstabilityPopup({ open: false, title: "", body: "" })}>
+              <Button
+                onClick={() => setInstabilityPopup({ open: false, title: "", body: "" })}
+              >
                 Close
               </Button>
             </div>
@@ -715,9 +818,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               {STAT_DEFS.map(({ key, short }) => (
                 <div key={key} className="rounded-lg border bg-background/20 px-3 py-2">
                   <div className="text-xs text-muted-foreground">{short}</div>
-                  <div className="mt-1 font-medium tabular-nums">
-                    {fmtSigned(invested[key])}
-                  </div>
+                  <div className="mt-1 font-medium tabular-nums">{fmtSigned(invested[key])}</div>
                 </div>
               ))}
             </div>
@@ -773,16 +874,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               value={fort}
               contribution="Contrib: STR + CON + CHA (per 3)"
               bonuses={[
-                {
-                  label: "Damage Threshold Bonus",
-                  value: fmtSigned(damageThresholdBonus),
-                  detail: "+2 per Fort",
-                },
-                {
-                  label: "Spares Bonus",
-                  value: fmtSigned(sparesBonus),
-                  detail: "+1 per 2 Fort",
-                },
+                { label: "Damage Threshold Bonus", value: fmtSigned(damageThresholdBonus), detail: "+2 per Fort" },
+                { label: "Spares Bonus", value: fmtSigned(sparesBonus), detail: "+1 per 2 Fort" },
               ]}
             />
 
@@ -791,11 +884,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               value={agility}
               contribution="Contrib: 2×DEX + WIS (per 3)"
               bonuses={[
-                {
-                  label: "Armor Class Bonus",
-                  value: fmtSigned(armorClassBonus),
-                  detail: "+1 per Agility",
-                },
+                { label: "Armor Class Bonus", value: fmtSigned(armorClassBonus), detail: "+1 per Agility" },
                 {
                   label: "Movement Speed Bonus",
                   value: moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`,
@@ -809,16 +898,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               value={techno}
               contribution="Contrib: INT + WIS + CHA (per 3)"
               bonuses={[
-                {
-                  label: "Save DC Bonus",
-                  value: fmtSigned(saveDCBonus),
-                  detail: "+1 per Techno",
-                },
-                {
-                  label: "System Capacity Bonus",
-                  value: fmtSigned(systemCapacityBonus),
-                  detail: "+1 per 2 Techno",
-                },
+                { label: "Save DC Bonus", value: fmtSigned(saveDCBonus), detail: "+1 per Techno" },
+                { label: "System Capacity Bonus", value: fmtSigned(systemCapacityBonus), detail: "+1 per 2 Techno" },
               ]}
             />
 
@@ -827,16 +908,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               value={internal}
               contribution="Contrib: STR + CON + INT (per 3)"
               bonuses={[
-                {
-                  label: "Buffer Size Bonus",
-                  value: fmtSigned(bufferSizeBonus),
-                  detail: "+1 per Internal",
-                },
-                {
-                  label: "Buffer Duration Bonus",
-                  value: fmtSigned(bufferDurationBonus),
-                  detail: "+1 per 2 Internal",
-                },
+                { label: "Buffer Size Bonus", value: fmtSigned(bufferSizeBonus), detail: "+1 per Internal" },
+                { label: "Buffer Duration Bonus", value: fmtSigned(bufferDurationBonus), detail: "+1 per 2 Internal" },
               ]}
             />
           </div>
@@ -857,7 +930,35 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                   label="Damage Threshold"
                   value={`${damageThreshold} (${fmtSigned(damageThresholdBonus)})`}
                 />
-                <Row label="Spares" value={`${spares} (${fmtSigned(sparesBonus)})`} />
+
+                {/* Item 5: Spares current/max with +/- */}
+                <div className="flex items-center justify-between rounded-md border bg-card/40 px-3 py-2">
+                  <div>Spares</div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={decSpares}
+                      disabled={loading || (sparesCurrent ?? sparesMax) <= 0}
+                    >
+                      −
+                    </Button>
+                    <div className="font-medium tabular-nums">
+                      {clamp(sparesCurrent ?? sparesMax, 0, sparesMax)}/{sparesMax}{" "}
+                      <span className="text-xs text-muted-foreground">
+                        ({fmtSigned(sparesBonus)})
+                      </span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={incSpares}
+                      disabled={loading || (sparesCurrent ?? sparesMax) >= sparesMax}
+                    >
+                      +
+                    </Button>
+                  </div>
+                </div>
               </div>
 
               <div className="mt-6 text-sm font-semibold">Mobility & Defense</div>
@@ -955,9 +1056,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             <div className="flex flex-wrap items-start justify-between gap-3 rounded-md border bg-background/20 p-3">
               <div>
                 <div className="text-sm font-semibold">Select 4 Frame Specs</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Frame Specs are persistent modifiers; choose four.
-                </div>
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-xs text-muted-foreground tabular-nums">
@@ -1016,81 +1114,123 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              <SectionButton
+              {/* Core section:
+                  Item 3: Only when Hull is Destroyed, Core can roll instabilities (disadvantage). */}
+              <CoreSection
                 title="Core"
                 subtitle={coreSystemName ? coreSystemName : "Select Core System"}
-                onClick={() => setCoreModalOpen(true)}
                 disabled={loading}
+                coreInstabilityEnabled={coreInstabilityEnabled}
+                pending={pendingInstability === "core"}
+                onStartInstability={() => setPendingInstability("core")}
+                onCancelInstability={() => setPendingInstability(null)}
+                onConfirmInstability={async () => {
+                  setPendingInstability(null);
+                  await rollInstability("core");
+                }}
+                condition={structureState.core}
+                onRepair={() => repairStructure("core")}
+                onClick={() => setCoreModalOpen(true)}
               />
 
-              <SectionWithInstability
+              <SectionWithInstabilityConfirm
                 title="Hull"
                 slot="hull"
                 subtitle={`${getSlotCost("hull")}/${PER_SLOT_CAP}`}
                 condition={structureState.hull}
+                disabled={loading}
+                pending={pendingInstability === "hull"}
+                onStart={() => setPendingInstability("hull")}
+                onCancel={() => setPendingInstability(null)}
+                onConfirm={async () => {
+                  setPendingInstability(null);
+                  await rollInstability("hull");
+                }}
                 onRepair={() => repairStructure("hull")}
-                onInstability={() => rollInstability("hull")}
                 onClick={() => {
                   setCatalogueDefaultSlot("hull");
                   setCatalogueOpen(true);
                 }}
-                disabled={loading}
               />
 
-              <SectionWithInstability
+              <SectionWithInstabilityConfirm
                 title="Left Arm"
                 slot="left_arm"
                 subtitle={`${getSlotCost("left_arm")}/${PER_SLOT_CAP}`}
                 condition={structureState.left_arm}
+                disabled={loading}
+                pending={pendingInstability === "left_arm"}
+                onStart={() => setPendingInstability("left_arm")}
+                onCancel={() => setPendingInstability(null)}
+                onConfirm={async () => {
+                  setPendingInstability(null);
+                  await rollInstability("left_arm");
+                }}
                 onRepair={() => repairStructure("left_arm")}
-                onInstability={() => rollInstability("left_arm")}
                 onClick={() => {
                   setCatalogueDefaultSlot("left_arm");
                   setCatalogueOpen(true);
                 }}
-                disabled={loading}
               />
 
-              <SectionWithInstability
+              <SectionWithInstabilityConfirm
                 title="Right Arm"
                 slot="right_arm"
                 subtitle={`${getSlotCost("right_arm")}/${PER_SLOT_CAP}`}
                 condition={structureState.right_arm}
+                disabled={loading}
+                pending={pendingInstability === "right_arm"}
+                onStart={() => setPendingInstability("right_arm")}
+                onCancel={() => setPendingInstability(null)}
+                onConfirm={async () => {
+                  setPendingInstability(null);
+                  await rollInstability("right_arm");
+                }}
                 onRepair={() => repairStructure("right_arm")}
-                onInstability={() => rollInstability("right_arm")}
                 onClick={() => {
                   setCatalogueDefaultSlot("right_arm");
                   setCatalogueOpen(true);
                 }}
-                disabled={loading}
               />
 
-              <SectionWithInstability
+              <SectionWithInstabilityConfirm
                 title="Legs"
                 slot="legs"
                 subtitle={`${getSlotCost("legs")}/${PER_SLOT_CAP}`}
                 condition={structureState.legs}
+                disabled={loading}
+                pending={pendingInstability === "legs"}
+                onStart={() => setPendingInstability("legs")}
+                onCancel={() => setPendingInstability(null)}
+                onConfirm={async () => {
+                  setPendingInstability(null);
+                  await rollInstability("legs");
+                }}
                 onRepair={() => repairStructure("legs")}
-                onInstability={() => rollInstability("legs")}
                 onClick={() => {
                   setCatalogueDefaultSlot("legs");
                   setCatalogueOpen(true);
                 }}
-                disabled={loading}
               />
 
-              <SectionWithInstability
+              <SectionWithInstabilityConfirm
                 title="Back"
                 slot="back"
                 subtitle={`${getSlotCost("back")}/${PER_SLOT_CAP}`}
                 condition={structureState.back}
+                disabled={loading}
+                pending={pendingInstability === "back"}
+                onStart={() => setPendingInstability("back")}
+                onCancel={() => setPendingInstability(null)}
+                onConfirm={async () => {
+                  setPendingInstability(null);
+                  await rollInstability("back");
+                }}
                 onRepair={() => repairStructure("back")}
-                onInstability={() => rollInstability("back")}
                 onClick={() => {
                   setCatalogueDefaultSlot("back");
                   setCatalogueOpen(true);
                 }}
-                disabled={loading}
               />
             </div>
 
@@ -1238,14 +1378,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               </div>
             </div>
 
-            {/* CHANGE 2: expand row-by-row based on filled hexes (not full buffer size) */}
             {filledCount > 0 && (
               <div className="mt-4">
-                <HexGridRowByRow
-                  capacity={bufferSizeBonus}
-                  filledValues={instabilityBuffer}
-                  perRow={8}
-                />
+                <HexGridRowByRow capacity={bufferSizeBonus} filledValues={instabilityBuffer} perRow={8} />
               </div>
             )}
           </CardContent>
@@ -1298,40 +1433,24 @@ function AuxCard(props: {
   );
 }
 
-function SectionButton(props: {
+function CoreSection(props: {
   title: string;
   subtitle: string;
   onClick: () => void;
   disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={props.onClick}
-      disabled={props.disabled}
-      className={[
-        "rounded-lg border px-4 py-3 text-left transition-colors",
-        "bg-background/20 hover:bg-accent hover:text-accent-foreground",
-        props.disabled ? "cursor-not-allowed opacity-60 hover:bg-background/20" : "",
-      ].join(" ")}
-    >
-      <div className="text-sm font-semibold">{props.title}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{props.subtitle}</div>
-    </button>
-  );
-}
 
-function SectionWithInstability(props: {
-  title: string;
-  slot: SystemSlot;
-  subtitle: string;
+  coreInstabilityEnabled: boolean;
+
+  pending: boolean;
+  onStartInstability: () => void;
+  onCancelInstability: () => void;
+  onConfirmInstability: () => void;
+
   condition: SystemCondition;
   onRepair: () => void;
-  onInstability: () => void;
-  onClick: () => void;
-  disabled?: boolean;
 }) {
   const status = conditionLabel(props.condition);
+  const showRepair = props.condition.state === "disabled" || props.condition.state === "destroyed";
 
   return (
     <div className="relative rounded-lg border bg-background/20 px-4 py-3">
@@ -1357,20 +1476,143 @@ function SectionWithInstability(props: {
         </button>
 
         <div className="flex flex-col items-end gap-2">
-          {/* Instability button */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={props.onInstability}
-            disabled={props.disabled}
-            title="Roll Instability"
-            className="h-8 px-2"
-          >
-            {/* simple “instability” glyph */}
-            <span className="text-xs font-semibold">⚠</span>
-          </Button>
+          {props.coreInstabilityEnabled && (
+            <div className="flex items-center gap-2">
+              {!props.pending ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={props.onStartInstability}
+                  disabled={props.disabled}
+                  title="Roll Instability (Disadvantage)"
+                  className="h-8 px-2"
+                >
+                  <span className="text-xs font-semibold">⚠</span>
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={props.onCancelInstability}
+                    disabled={props.disabled}
+                    className="h-8 px-2"
+                    title="Cancel"
+                  >
+                    X
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={props.onConfirmInstability}
+                    disabled={props.disabled}
+                    className="h-8 px-2"
+                    title="Confirm"
+                  >
+                    ✓
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
 
-          {(props.condition.state === "disabled" || props.condition.state === "destroyed") && (
+          {showRepair && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={props.onRepair}
+              disabled={props.disabled}
+              className="h-8"
+            >
+              Repair
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SectionWithInstabilityConfirm(props: {
+  title: string;
+  slot: SystemSlot;
+  subtitle: string;
+  condition: SystemCondition;
+
+  disabled?: boolean;
+
+  pending: boolean;
+  onStart: () => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+
+  onRepair: () => void;
+  onClick: () => void;
+}) {
+  const status = conditionLabel(props.condition);
+  const showRepair = props.condition.state === "disabled" || props.condition.state === "destroyed";
+
+  return (
+    <div className="relative rounded-lg border bg-background/20 px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <button
+          type="button"
+          onClick={props.onClick}
+          disabled={props.disabled}
+          className={[
+            "min-w-0 flex-1 text-left transition-colors",
+            props.disabled ? "cursor-not-allowed opacity-60" : "",
+          ].join(" ")}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-semibold">{props.title}</div>
+            {status && (
+              <span className="rounded-md border bg-background/40 px-2 py-0.5 text-xs font-medium">
+                {status}
+              </span>
+            )}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">{props.subtitle}</div>
+        </button>
+
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2">
+            {!props.pending ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={props.onStart}
+                disabled={props.disabled}
+                title="Roll Instability"
+                className="h-8 px-2"
+              >
+                <span className="text-xs font-semibold">⚠</span>
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={props.onCancel}
+                  disabled={props.disabled}
+                  className="h-8 px-2"
+                  title="Cancel"
+                >
+                  X
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={props.onConfirm}
+                  disabled={props.disabled}
+                  className="h-8 px-2"
+                  title="Confirm"
+                >
+                  ✓
+                </Button>
+              </>
+            )}
+          </div>
+
+          {showRepair && (
             <Button
               variant="outline"
               size="sm"
@@ -1389,10 +1631,6 @@ function SectionWithInstability(props: {
 
 /**
  * Renders only as many hexes as needed to cover the filled count, row-by-row.
- * Example:
- * - capacity=24, filled=1 -> renders 8 hexes (1 row)
- * - filled=9 -> renders 16 hexes (2 rows)
- * - filled=17 -> renders 24 hexes (3 rows)
  */
 function HexGridRowByRow(props: {
   capacity: number;
