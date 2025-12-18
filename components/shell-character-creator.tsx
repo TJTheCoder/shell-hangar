@@ -10,10 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 
 import { SYSTEMS, type SystemSlot } from "@/lib/systems/systems";
-import {
-  SystemCatalogueModal,
-  type InstalledSystem,
-} from "@/components/system-catalogue-modal";
+import { SystemCatalogueModal } from "@/components/system-catalogue-modal";
 
 import { CORE_SYSTEMS } from "@/lib/systems/core-systems";
 import { FRAME_SPECS } from "@/lib/frame-specs/frame-specs";
@@ -30,6 +27,19 @@ type Stats = {
 };
 
 type AbilityKey = keyof Stats;
+
+type SystemCondition =
+  | { state: "ok" }
+  | { state: "disabled"; count: number }
+  | { state: "destroyed" };
+
+type InstalledSystem = {
+  systemId: string;
+  slot: SystemSlot;
+  condition?: SystemCondition; // default ok
+};
+
+type StructureState = Record<SystemSlot, SystemCondition>;
 
 const STAT_DEFS: Array<{ key: AbilityKey; label: string; short: string }> = [
   { key: "str", label: "Strength", short: "STR" },
@@ -80,6 +90,34 @@ function sortedTags(tags?: string[]) {
   return (tags ?? []).slice().sort((a, b) => a.localeCompare(b));
 }
 
+function normalizeCondition(input: any): SystemCondition {
+  if (!input || typeof input !== "object") return { state: "ok" };
+  if (input.state === "destroyed") return { state: "destroyed" };
+  if (input.state === "disabled") {
+    const c = Number(input.count);
+    return { state: "disabled", count: Number.isFinite(c) ? Math.max(1, Math.trunc(c)) : 1 };
+  }
+  return { state: "ok" };
+}
+
+function conditionLabel(c: SystemCondition) {
+  if (c.state === "destroyed") return "Destroyed";
+  if (c.state === "disabled") return `Disabled: ${c.count}`;
+  return null;
+}
+
+function isEligibleForTarget(c: SystemCondition) {
+  // Eligible means: can be disabled/destroyed
+  // Destroyed should not be selected again (keeps targeting meaningful)
+  return c.state !== "destroyed";
+}
+
+function pickRandom<T>(arr: T[]) {
+  if (arr.length === 0) return null;
+  const idx = Math.floor(Math.random() * arr.length);
+  return arr[idx];
+}
+
 export function ShellCharacterCreator({ userId }: { userId: string }) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -98,15 +136,27 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const [frameSpecsOpen, setFrameSpecsOpen] = useState(false);
 
   // Systems
-  const [installedSystems, setInstalledSystems] = useState<InstalledSystem[]>(
-    [],
-  );
+  const [installedSystems, setInstalledSystems] = useState<InstalledSystem[]>([]);
+  const [structureState, setStructureState] = useState<StructureState>({
+    hull: { state: "ok" },
+    left_arm: { state: "ok" },
+    right_arm: { state: "ok" },
+    legs: { state: "ok" },
+    back: { state: "ok" },
+  });
+
   const [catalogueOpen, setCatalogueOpen] = useState(false);
-  const [catalogueDefaultSlot, setCatalogueDefaultSlot] =
-    useState<SystemSlot>("hull");
+  const [catalogueDefaultSlot, setCatalogueDefaultSlot] = useState<SystemSlot>("hull");
 
   // Instability Buffer (array of filled hex values)
   const [instabilityBuffer, setInstabilityBuffer] = useState<number[]>([]);
+
+  // Instability result popup
+  const [instabilityPopup, setInstabilityPopup] = useState<{
+    open: boolean;
+    title: string;
+    body: string;
+  }>({ open: false, title: "", body: "" });
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -165,17 +215,17 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const damageThresholdBonus = fort * 2;
   const sparesBonus = Math.floor(fort / 2);
 
-  const armorClassBonus = agility; // (formerly AC)
+  const armorClassBonus = agility;
   const moveSpeedBonusFt = Math.floor(agility / 2) * 10;
 
+  // CHANGE 1: Techno no longer grants Saving Throws Bonus
   const saveDCBonus = techno;
-  const savingThrowsBonus = techno;
   const systemCapacityBonus = Math.floor(techno / 2);
 
   const bufferSizeBonus = internal;
   const bufferDurationBonus = Math.floor(internal / 2);
 
-  // IMPORTANT RULE UPDATE: Buffer Duration has base value 1 (minimum 1).
+  // Buffer Duration has base value 1 (minimum 1).
   const bufferDuration = Math.max(1, 1 + bufferDurationBonus);
 
   // Tactical Profile base stats
@@ -193,7 +243,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const movementSpeedFt = baseMoveSpeedFt + moveSpeedBonusFt;
   const armorClass = baseArmorClass + armorClassBonus;
   const saveDC = baseSaveDC + saveDCBonus;
-  const forwardSaveBonus = saveDC - 10; // requested: +(Save DC - 10)
+  const forwardSaveBonus = saveDC - 10;
 
   const saveBonus = (key: AbilityKey) =>
     abilityMod(stats[key]) + (saveProfs.includes(key) ? PROF_BONUS : 0);
@@ -218,7 +268,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     setInstabilityBuffer((prev) => [...prev, bufferDuration]);
   };
 
-  // per your wording: remove the first filled hex and shift remaining left
+  // remove the earliest filled and shift remaining left
   const onUnfillOne = () => {
     if (!canUnfill) return;
     setInstabilityBuffer((prev) => prev.slice(1));
@@ -256,11 +306,26 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     if (wouldSlot > PER_SLOT_CAP) return;
     if (wouldTotal > TOTAL_CAP) return;
 
-    setInstalledSystems((prev) => [...prev, { systemId, slot }]);
+    setInstalledSystems((prev) => [
+      ...prev,
+      { systemId, slot, condition: { state: "ok" } },
+    ]);
   };
 
   const removeSystem = (systemId: string) => {
     setInstalledSystems((prev) => prev.filter((x) => x.systemId !== systemId));
+  };
+
+  const repairSystem = (systemId: string) => {
+    setInstalledSystems((prev) =>
+      prev.map((x) =>
+        x.systemId === systemId ? { ...x, condition: { state: "ok" } } : x,
+      ),
+    );
+  };
+
+  const repairStructure = (slot: SystemSlot) => {
+    setStructureState((prev) => ({ ...prev, [slot]: { state: "ok" } }));
   };
 
   const coreSystemName = useMemo(() => {
@@ -276,6 +341,127 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       .map((s) => s!);
   }, [frameSpecIds]);
 
+  // ---------- Instability rolling ----------
+  const rollInstability = async (slot: SystemSlot) => {
+    const ok = window.confirm(
+      `Apply an instability to ${SLOT_LABELS[slot]}?\n\nThis will roll a d6.`,
+    );
+    if (!ok) return;
+
+    setError(null);
+
+    let roll: number | null = null;
+
+    try {
+      const res = await fetch("/api/instability", { method: "POST" });
+      if (!res.ok) throw new Error(`Instability roll failed (${res.status})`);
+      const json = (await res.json()) as { roll: number };
+      roll = Number(json.roll);
+      if (!Number.isFinite(roll) || roll < 1 || roll > 6) {
+        throw new Error("Invalid roll result returned by backend.");
+      }
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to roll instability.");
+      return;
+    }
+
+    // Apply result
+    if (roll >= 4) {
+      setInstabilityPopup({
+        open: true,
+        title: `Instability Roll: ${roll}`,
+        body: "No effect.",
+      });
+      return;
+    }
+
+    // Candidate systems in the slot, excluding destroyed
+    const candidates = installedSystems
+      .filter((s) => s.slot === slot)
+      .map((s) => ({
+        ...s,
+        condition: s.condition ? normalizeCondition(s.condition) : { state: "ok" as const },
+      }))
+      .filter((s) => isEligibleForTarget(s.condition!));
+
+    const targetSystem = pickRandom(candidates);
+
+    const applyToStructure = () => {
+      setStructureState((prev) => {
+        const cur = normalizeCondition(prev[slot]);
+        if (roll === 1) return { ...prev, [slot]: { state: "destroyed" } };
+
+        // roll 2-3 => disabled (increment if already disabled)
+        if (cur.state === "disabled") {
+          return { ...prev, [slot]: { state: "disabled", count: cur.count + 1 } };
+        }
+        if (cur.state === "destroyed") {
+          return prev; // already destroyed
+        }
+        return { ...prev, [slot]: { state: "disabled", count: 2 } };
+      });
+
+      const label =
+        roll === 1
+          ? "Destroyed"
+          : "Disabled" +
+            (() => {
+              const cur = normalizeCondition(structureState[slot]);
+              if (cur.state === "disabled") return `: ${cur.count + 1}`;
+              return ": 2";
+            })();
+
+      setInstabilityPopup({
+        open: true,
+        title: `Instability Roll: ${roll}`,
+        body: `No eligible systems. ${SLOT_LABELS[slot]} structure is now ${label}.`,
+      });
+    };
+
+    if (!targetSystem) {
+      applyToStructure();
+      return;
+    }
+
+    const sysDef = SYSTEMS.find((x) => x.id === targetSystem.systemId);
+    const sysName = sysDef?.name ?? targetSystem.systemId;
+
+    setInstalledSystems((prev) =>
+      prev.map((s) => {
+        if (s.systemId !== targetSystem.systemId) return s;
+
+        const cur = normalizeCondition(s.condition);
+        if (roll === 1) {
+          return { ...s, condition: { state: "destroyed" } };
+        }
+
+        // roll 2-3
+        if (cur.state === "disabled") {
+          return { ...s, condition: { state: "disabled", count: cur.count + 1 } };
+        }
+        if (cur.state === "destroyed") {
+          return s;
+        }
+        return { ...s, condition: { state: "disabled", count: 2 } };
+      }),
+    );
+
+    const outcome =
+      roll === 1
+        ? "Destroyed"
+        : (() => {
+            const cur = normalizeCondition(targetSystem.condition);
+            if (cur.state === "disabled") return `Disabled: ${cur.count + 1}`;
+            return "Disabled: 2";
+          })();
+
+    setInstabilityPopup({
+      open: true,
+      title: `Instability Roll: ${roll}`,
+      body: `${sysName} on ${SLOT_LABELS[slot]} is now ${outcome}.`,
+    });
+  };
+
   // ---------- Load ----------
   useEffect(() => {
     let cancelled = false;
@@ -288,7 +474,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       const { data, error } = await supabase
         .from("characters")
         .select(
-          "shell_name,str,dex,con,int,wis,cha,save_prof_1,save_prof_2,installed_systems,core_system_id,frame_specs,instability_buffer",
+          "shell_name,str,dex,con,int,wis,cha,save_prof_1,save_prof_2,installed_systems,core_system_id,frame_specs,instability_buffer,structure_state",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -335,11 +521,10 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             .map((x: any) => ({
               systemId: String(x?.systemId ?? ""),
               slot: x?.slot,
+              condition: normalizeCondition(x?.condition),
             }))
-            .filter(
-              (x: any) => typeof x.systemId === "string" && isSystemSlot(x.slot),
-            )
-            .map((x: any) => ({ systemId: x.systemId, slot: x.slot }));
+            .filter((x: any) => typeof x.systemId === "string" && isSystemSlot(x.slot))
+            .map((x: any) => ({ systemId: x.systemId, slot: x.slot, condition: x.condition }));
           setInstalledSystems(cleaned);
         } else {
           setInstalledSystems([]);
@@ -355,6 +540,25 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         } else {
           setInstabilityBuffer([]);
         }
+
+        const rawStructureState = (data as any).structure_state;
+        if (rawStructureState && typeof rawStructureState === "object") {
+          setStructureState({
+            hull: normalizeCondition(rawStructureState.hull),
+            left_arm: normalizeCondition(rawStructureState.left_arm),
+            right_arm: normalizeCondition(rawStructureState.right_arm),
+            legs: normalizeCondition(rawStructureState.legs),
+            back: normalizeCondition(rawStructureState.back),
+          });
+        } else {
+          setStructureState({
+            hull: { state: "ok" },
+            left_arm: { state: "ok" },
+            right_arm: { state: "ok" },
+            legs: { state: "ok" },
+            back: { state: "ok" },
+          });
+        }
       } else {
         setShellName("");
         setStats(DEFAULT_STATS);
@@ -363,6 +567,13 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         setFrameSpecIds([]);
         setInstalledSystems([]);
         setInstabilityBuffer([]);
+        setStructureState({
+          hull: { state: "ok" },
+          left_arm: { state: "ok" },
+          right_arm: { state: "ok" },
+          legs: { state: "ok" },
+          back: { state: "ok" },
+        });
       }
 
       setLoading(false);
@@ -382,9 +593,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     setSavedAt(null);
 
     const normalizedBuffer =
-      bufferSizeBonus >= 1
-        ? instabilityBuffer.slice(0, bufferSizeBonus)
-        : [];
+      bufferSizeBonus >= 1 ? instabilityBuffer.slice(0, bufferSizeBonus) : [];
 
     const payload = {
       user_id: userId,
@@ -399,6 +608,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       installed_systems: installedSystems,
 
       instability_buffer: normalizedBuffer,
+
+      structure_state: structureState,
 
       updated_at: new Date().toISOString(),
     };
@@ -416,7 +627,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     setSaving(false);
   };
 
-  // Instability Buffer layout: compact when empty
+  // Instability Buffer layout behavior:
+  // - hidden when filledCount=0 (compact)
+  // - shows only rows necessary for the filled count (row-by-row), not full buffer size
   const showInstabilityBuffer = bufferSizeBonus >= 1;
   const instabilityCompact = filledCount === 0;
 
@@ -424,11 +637,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     <div className="flex w-full flex-col gap-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Shell Configuration
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Shell Configuration</h1>
           <p className="text-sm text-muted-foreground">
-            Configure attributes, proficiencies, frame specs, and systems.
+            Configure attributes, frame specs, systems, and instabilities.
           </p>
         </div>
 
@@ -448,6 +659,21 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       {savedAt && (
         <div className="rounded-md border bg-card p-3 text-sm text-muted-foreground">
           Saved: {savedAt}
+        </div>
+      )}
+
+      {/* Instability result popup */}
+      {instabilityPopup.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl border bg-card p-4 shadow">
+            <div className="text-lg font-semibold">{instabilityPopup.title}</div>
+            <div className="mt-2 text-sm text-muted-foreground">{instabilityPopup.body}</div>
+            <div className="mt-4 flex justify-end">
+              <Button onClick={() => setInstabilityPopup({ open: false, title: "", body: "" })}>
+                Close
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -482,17 +708,12 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               <div className="text-sm text-muted-foreground">
                 Total invested points (above 8)
               </div>
-              <div className="text-3xl font-semibold tabular-nums">
-                {generation}
-              </div>
+              <div className="text-3xl font-semibold tabular-nums">{generation}</div>
             </div>
 
             <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
               {STAT_DEFS.map(({ key, short }) => (
-                <div
-                  key={key}
-                  className="rounded-lg border bg-background/20 px-3 py-2"
-                >
+                <div key={key} className="rounded-lg border bg-background/20 px-3 py-2">
                   <div className="text-xs text-muted-foreground">{short}</div>
                   <div className="mt-1 font-medium tabular-nums">
                     {fmtSigned(invested[key])}
@@ -577,8 +798,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                 },
                 {
                   label: "Movement Speed Bonus",
-                  value:
-                    moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`,
+                  value: moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`,
                   detail: "+10 ft per 2 Agility",
                 },
               ]}
@@ -592,11 +812,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                 {
                   label: "Save DC Bonus",
                   value: fmtSigned(saveDCBonus),
-                  detail: "+1 per Techno",
-                },
-                {
-                  label: "Saving Throws Bonus",
-                  value: fmtSigned(savingThrowsBonus),
                   detail: "+1 per Techno",
                 },
                 {
@@ -651,20 +866,14 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                   label="Movement Speed"
                   value={`${movementSpeedFt} ft (${moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`})`}
                 />
-                <Row
-                  label="Armor Class"
-                  value={`${armorClass} (${fmtSigned(armorClassBonus)})`}
-                />
+                <Row label="Armor Class" value={`${armorClass} (${fmtSigned(armorClassBonus)})`} />
               </div>
 
               <div className="mt-6 text-sm font-semibold">Offense & Control</div>
               <div className="mt-3 grid gap-2">
                 <Row label="Attack Bonus" value={fmtSigned(attackBonus)} />
                 <Row label="Save DC" value={`${saveDC} (${fmtSigned(saveDCBonus)})`} />
-                <Row
-                  label="Forward Save Bonus"
-                  value={fmtSigned(forwardSaveBonus)}
-                />
+                <Row label="Forward Save Bonus" value={fmtSigned(forwardSaveBonus)} />
               </div>
 
               <div className="mt-6 text-sm font-semibold">Sensors</div>
@@ -676,8 +885,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             <div className="rounded-lg border bg-background/20 p-4">
               <div className="text-sm font-semibold">Saving Throws</div>
               <div className="mt-1 text-xs text-muted-foreground">
-                Choose exactly two save proficiencies. Proficiency bonus is{" "}
-                {fmtSigned(PROF_BONUS)}.
+                Choose exactly two save proficiencies. Proficiency bonus is {fmtSigned(PROF_BONUS)}.
               </div>
 
               <div className="mt-4 grid gap-2">
@@ -701,21 +909,15 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                         />
                         <label
                           htmlFor={`save-prof-${key}`}
-                          className={`cursor-pointer text-sm ${
-                            disableCheck ? "text-muted-foreground" : ""
-                          }`}
+                          className={`cursor-pointer text-sm ${disableCheck ? "text-muted-foreground" : ""}`}
                         >
                           {label}{" "}
-                          <span className="text-xs text-muted-foreground">
-                            ({short})
-                          </span>
+                          <span className="text-xs text-muted-foreground">({short})</span>
                         </label>
                       </div>
 
                       <div className="text-right">
-                        <div className="font-medium tabular-nums">
-                          {fmtSigned(total)}
-                        </div>
+                        <div className="font-medium tabular-nums">{fmtSigned(total)}</div>
                         <div className="text-xs text-muted-foreground tabular-nums">
                           {fmtSigned(mod)}
                           {isProf ? ` + ${PROF_BONUS}` : ""}
@@ -728,8 +930,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
               <div className="mt-6 text-sm font-semibold">Skills</div>
               <div className="mt-1 text-xs text-muted-foreground">
-                Shells are proficient in Athletics, Acrobatics, Perception, and
-                Stealth. Proficiency bonus is {fmtSigned(PROF_BONUS)}.
+                Shells are proficient in Athletics, Acrobatics, Perception, and Stealth. Proficiency bonus is{" "}
+                {fmtSigned(PROF_BONUS)}.
               </div>
 
               <div className="mt-4 grid gap-2">
@@ -761,11 +963,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                 <div className="text-xs text-muted-foreground tabular-nums">
                   Selected: {frameSpecIds.length}/4
                 </div>
-                <Button
-                  variant="outline"
-                  onClick={() => setFrameSpecsOpen(true)}
-                  disabled={loading}
-                >
+                <Button variant="outline" onClick={() => setFrameSpecsOpen(true)} disabled={loading}>
                   Choose Specs
                 </Button>
               </div>
@@ -775,19 +973,12 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               <div className="text-sm font-semibold">Selected</div>
               <div className="mt-2 grid gap-2">
                 {selectedFrameSpecs.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">
-                    No frame specs selected yet.
-                  </div>
+                  <div className="text-sm text-muted-foreground">No frame specs selected yet.</div>
                 ) : (
                   selectedFrameSpecs.map((s) => (
-                    <div
-                      key={s.id}
-                      className="rounded-md border bg-card/40 px-3 py-2"
-                    >
+                    <div key={s.id} className="rounded-md border bg-card/40 px-3 py-2">
                       <div className="text-sm font-medium">{s.name}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {s.description}
-                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">{s.description}</div>
                     </div>
                   ))
                 )}
@@ -831,45 +1022,70 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                 onClick={() => setCoreModalOpen(true)}
                 disabled={loading}
               />
-              <SectionButton
+
+              <SectionWithInstability
                 title="Hull"
+                slot="hull"
                 subtitle={`${getSlotCost("hull")}/${PER_SLOT_CAP}`}
+                condition={structureState.hull}
+                onRepair={() => repairStructure("hull")}
+                onInstability={() => rollInstability("hull")}
                 onClick={() => {
                   setCatalogueDefaultSlot("hull");
                   setCatalogueOpen(true);
                 }}
                 disabled={loading}
               />
-              <SectionButton
+
+              <SectionWithInstability
                 title="Left Arm"
+                slot="left_arm"
                 subtitle={`${getSlotCost("left_arm")}/${PER_SLOT_CAP}`}
+                condition={structureState.left_arm}
+                onRepair={() => repairStructure("left_arm")}
+                onInstability={() => rollInstability("left_arm")}
                 onClick={() => {
                   setCatalogueDefaultSlot("left_arm");
                   setCatalogueOpen(true);
                 }}
                 disabled={loading}
               />
-              <SectionButton
+
+              <SectionWithInstability
                 title="Right Arm"
+                slot="right_arm"
                 subtitle={`${getSlotCost("right_arm")}/${PER_SLOT_CAP}`}
+                condition={structureState.right_arm}
+                onRepair={() => repairStructure("right_arm")}
+                onInstability={() => rollInstability("right_arm")}
                 onClick={() => {
                   setCatalogueDefaultSlot("right_arm");
                   setCatalogueOpen(true);
                 }}
                 disabled={loading}
               />
-              <SectionButton
+
+              <SectionWithInstability
                 title="Legs"
+                slot="legs"
                 subtitle={`${getSlotCost("legs")}/${PER_SLOT_CAP}`}
+                condition={structureState.legs}
+                onRepair={() => repairStructure("legs")}
+                onInstability={() => rollInstability("legs")}
                 onClick={() => {
                   setCatalogueDefaultSlot("legs");
                   setCatalogueOpen(true);
                 }}
                 disabled={loading}
               />
-              <SectionButton
+
+              <SectionWithInstability
                 title="Back"
+                slot="back"
                 subtitle={`${getSlotCost("back")}/${PER_SLOT_CAP}`}
+                condition={structureState.back}
+                onRepair={() => repairStructure("back")}
+                onInstability={() => rollInstability("back")}
                 onClick={() => {
                   setCatalogueDefaultSlot("back");
                   setCatalogueOpen(true);
@@ -891,9 +1107,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               <div className="text-sm font-semibold">Installed Systems</div>
               <div className="mt-2 grid gap-2">
                 {installedSystems.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">
-                    No systems installed yet.
-                  </div>
+                  <div className="text-sm text-muted-foreground">No systems installed yet.</div>
                 ) : (
                   installedSystems.map((inst) => {
                     const def = SYSTEMS.find((s) => s.id === inst.systemId);
@@ -902,15 +1116,30 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                     const slotLabel = SLOT_LABELS[inst.slot];
                     const tags = sortedTags(def?.tags);
                     const description = def?.description ?? "";
+                    const cond = normalizeCondition(inst.condition);
+                    const status = conditionLabel(cond);
+
+                    const muted = cond.state !== "ok";
 
                     return (
                       <div
                         key={`${inst.systemId}:${inst.slot}`}
-                        className="rounded-md border bg-card/40 px-3 py-2"
+                        className={[
+                          "rounded-md border bg-card/40 px-3 py-2",
+                          muted ? "opacity-60" : "",
+                        ].join(" ")}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <div className="text-sm font-medium">{name}</div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="text-sm font-medium">{name}</div>
+                              {status && (
+                                <span className="rounded-md border bg-background/40 px-2 py-0.5 text-xs font-medium">
+                                  {status}
+                                </span>
+                              )}
+                            </div>
+
                             <div className="text-xs text-muted-foreground">
                               Slot: {slotLabel} · Cost: {cost}
                             </div>
@@ -935,14 +1164,27 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                             )}
                           </div>
 
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => removeSystem(inst.systemId)}
-                            disabled={loading}
-                          >
-                            Remove
-                          </Button>
+                          <div className="flex flex-col gap-2">
+                            {(cond.state === "disabled" || cond.state === "destroyed") && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => repairSystem(inst.systemId)}
+                                disabled={loading}
+                              >
+                                Repair
+                              </Button>
+                            )}
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => removeSystem(inst.systemId)}
+                              disabled={loading}
+                            >
+                              Remove
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -956,13 +1198,13 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               onClose={() => setCatalogueOpen(false)}
               systems={SYSTEMS}
               defaultSlot={catalogueDefaultSlot}
-              installed={installedSystems}
+              installed={installedSystems as any}
               perSlotCap={PER_SLOT_CAP}
               totalCap={TOTAL_CAP}
               getSystemCost={getSystemCost}
               getSlotCost={getSlotCost}
               getTotalCost={getTotalCost}
-              onInstall={(systemId, slot) => installSystem(systemId, slot)}
+              onInstall={(systemId: string, slot: SystemSlot) => installSystem(systemId, slot)}
             />
           </div>
         </CardContent>
@@ -984,11 +1226,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               </div>
 
               <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={onUnfillOne}
-                  disabled={loading || !canUnfill}
-                >
+                <Button variant="outline" onClick={onUnfillOne} disabled={loading || !canUnfill}>
                   −
                 </Button>
                 <div className="text-sm tabular-nums">
@@ -1000,11 +1238,11 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               </div>
             </div>
 
-            {/* Compact when empty: keep the section small by not rendering the grid until used */}
+            {/* CHANGE 2: expand row-by-row based on filled hexes (not full buffer size) */}
             {filledCount > 0 && (
               <div className="mt-4">
-                <HexGrid
-                  total={bufferSizeBonus}
+                <HexGridRowByRow
+                  capacity={bufferSizeBonus}
                   filledValues={instabilityBuffer}
                   perRow={8}
                 />
@@ -1037,9 +1275,7 @@ function AuxCard(props: {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-base font-semibold">{props.title}</div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {props.contribution}
-          </div>
+          <div className="mt-1 text-xs text-muted-foreground">{props.contribution}</div>
         </div>
         <div className="text-2xl font-semibold tabular-nums">{props.value}</div>
       </div>
@@ -1076,9 +1312,7 @@ function SectionButton(props: {
       className={[
         "rounded-lg border px-4 py-3 text-left transition-colors",
         "bg-background/20 hover:bg-accent hover:text-accent-foreground",
-        props.disabled
-          ? "cursor-not-allowed opacity-60 hover:bg-background/20"
-          : "",
+        props.disabled ? "cursor-not-allowed opacity-60 hover:bg-background/20" : "",
       ].join(" ")}
     >
       <div className="text-sm font-semibold">{props.title}</div>
@@ -1087,17 +1321,94 @@ function SectionButton(props: {
   );
 }
 
-function HexGrid(props: {
-  total: number;
+function SectionWithInstability(props: {
+  title: string;
+  slot: SystemSlot;
+  subtitle: string;
+  condition: SystemCondition;
+  onRepair: () => void;
+  onInstability: () => void;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const status = conditionLabel(props.condition);
+
+  return (
+    <div className="relative rounded-lg border bg-background/20 px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <button
+          type="button"
+          onClick={props.onClick}
+          disabled={props.disabled}
+          className={[
+            "min-w-0 flex-1 text-left transition-colors",
+            props.disabled ? "cursor-not-allowed opacity-60" : "",
+          ].join(" ")}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-semibold">{props.title}</div>
+            {status && (
+              <span className="rounded-md border bg-background/40 px-2 py-0.5 text-xs font-medium">
+                {status}
+              </span>
+            )}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">{props.subtitle}</div>
+        </button>
+
+        <div className="flex flex-col items-end gap-2">
+          {/* Instability button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={props.onInstability}
+            disabled={props.disabled}
+            title="Roll Instability"
+            className="h-8 px-2"
+          >
+            {/* simple “instability” glyph */}
+            <span className="text-xs font-semibold">⚠</span>
+          </Button>
+
+          {(props.condition.state === "disabled" || props.condition.state === "destroyed") && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={props.onRepair}
+              disabled={props.disabled}
+              className="h-8"
+            >
+              Repair
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Renders only as many hexes as needed to cover the filled count, row-by-row.
+ * Example:
+ * - capacity=24, filled=1 -> renders 8 hexes (1 row)
+ * - filled=9 -> renders 16 hexes (2 rows)
+ * - filled=17 -> renders 24 hexes (3 rows)
+ */
+function HexGridRowByRow(props: {
+  capacity: number;
   filledValues: number[];
   perRow: number; // 8
 }) {
-  const { total, filledValues, perRow } = props;
+  const { capacity, filledValues, perRow } = props;
+  const filled = filledValues.length;
 
-  const cells = Array.from({ length: total }, (_, i) => {
-    const filled = i < filledValues.length;
-    const value = filled ? filledValues[i] : null;
-    return { filled, value, key: i };
+  const rowsNeeded = Math.max(1, Math.ceil(filled / perRow));
+  const displayCount = Math.min(capacity, rowsNeeded * perRow);
+
+  const cells = Array.from({ length: displayCount }, (_, i) => {
+    const isFilled = i < filled;
+    const value = isFilled ? filledValues[i] : null;
+    return { isFilled, value, key: i };
   });
 
   return (
@@ -1106,7 +1417,7 @@ function HexGrid(props: {
       style={{ gridTemplateColumns: `repeat(${perRow}, minmax(0, 1fr))` }}
     >
       {cells.map((c) => (
-        <HexCell key={c.key} filled={c.filled} value={c.value} />
+        <HexCell key={c.key} filled={c.isFilled} value={c.value} />
       ))}
     </div>
   );
@@ -1128,9 +1439,7 @@ function HexCell(props: { filled: boolean; value: number | null }) {
       aria-label={props.filled ? `Filled: ${props.value}` : "Empty"}
     >
       {props.filled ? (
-        <span className="text-sm font-semibold tabular-nums">
-          {props.value}
-        </span>
+        <span className="text-sm font-semibold tabular-nums">{props.value}</span>
       ) : null}
     </div>
   );
