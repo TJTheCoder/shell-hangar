@@ -17,6 +17,8 @@ import { FRAME_SPECS } from "@/lib/frame-specs/frame-specs";
 import { CoreSystemModal } from "@/components/core-system-modal";
 import { FrameSpecsModal } from "@/components/frame-specs-modal";
 
+import { Play, FastForward } from "lucide-react";
+
 type Stats = {
   str: number;
   dex: number;
@@ -39,7 +41,6 @@ type InstalledSystem = {
   condition?: SystemCondition;
 };
 
-// Structures include the 5 slots + Core (stored in structure_state JSON)
 type StructureKey = SystemSlot | "core";
 type StructureState = Record<StructureKey, SystemCondition>;
 
@@ -129,18 +130,14 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const [shellName, setShellName] = useState("");
   const [stats, setStats] = useState<Stats>(DEFAULT_STATS);
 
-  // choose two of six stats to gain save proficiency
   const [saveProfs, setSaveProfs] = useState<AbilityKey[]>([]);
 
-  // Core system
   const [coreSystemId, setCoreSystemId] = useState<string | null>(null);
   const [coreModalOpen, setCoreModalOpen] = useState(false);
 
-  // Frame specs (pick 4)
   const [frameSpecIds, setFrameSpecIds] = useState<string[]>([]);
   const [frameSpecsOpen, setFrameSpecsOpen] = useState(false);
 
-  // Systems
   const [installedSystems, setInstalledSystems] = useState<InstalledSystem[]>(
     [],
   );
@@ -158,23 +155,19 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const [catalogueDefaultSlot, setCatalogueDefaultSlot] =
     useState<SystemSlot>("hull");
 
-  // Instability Buffer (array of filled hex values)
   const [instabilityBuffer, setInstabilityBuffer] = useState<number[]>([]);
 
-  // Instability result popup
-  const [instabilityPopup, setInstabilityPopup] = useState<{
+  const [popup, setPopup] = useState<{
     open: boolean;
     title: string;
     body: string;
   }>({ open: false, title: "", body: "" });
 
-  // Pending confirm per-slot (replaces window.confirm)
-  const [pendingInstability, setPendingInstability] = useState<StructureKey | null>(null);
+  const [pendingInstability, setPendingInstability] =
+    useState<StructureKey | null>(null);
 
-  // Tactical Profile: Spares current (saved)
   const [sparesCurrent, setSparesCurrent] = useState<number | null>(null);
 
-  // UI state
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -221,30 +214,25 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     invested.wis +
     invested.cha;
 
-  // Aux stats (+1 per 3 contribution points)
   const fort = Math.floor((invested.str + invested.con + invested.cha) / 3);
   const agility = Math.floor((2 * invested.dex + invested.wis) / 3);
   const techno = Math.floor((invested.int + invested.wis + invested.cha) / 3);
   const internal = Math.floor((invested.str + invested.con + invested.int) / 3);
 
-  // Tertiary bonuses
   const damageThresholdBonus = fort * 2;
   const sparesBonus = Math.floor(fort / 2);
 
   const armorClassBonus = agility;
   const moveSpeedBonusFt = Math.floor(agility / 2) * 10;
 
-  // Item 1 previously: Techno no longer grants any saving-throw bonus (already removed)
   const saveDCBonus = techno;
   const systemCapacityBonus = Math.floor(techno / 2);
 
   const bufferSizeBonus = internal;
   const bufferDurationBonus = Math.floor(internal / 2);
 
-  // Buffer Duration base is 1 (min 1)
   const bufferDuration = Math.max(1, 1 + bufferDurationBonus);
 
-  // Tactical Profile base stats
   const baseDamageThreshold = 16;
   const baseSpares = 5;
   const baseAttackBonus = 6;
@@ -261,7 +249,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const saveDC = baseSaveDC + saveDCBonus;
   const forwardSaveBonus = saveDC - 10;
 
-  // Initialize spares current to max (default) and clamp on max changes
   useEffect(() => {
     setSparesCurrent((prev) => {
       if (prev === null || prev === undefined) return sparesMax;
@@ -286,12 +273,10 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   // Systems caps
   const TOTAL_CAP = 19 + systemCapacityBonus;
 
-  // If Buffer Size shrinks, trim the instability buffer automatically
   useEffect(() => {
     setInstabilityBuffer((prev) => prev.slice(0, Math.max(0, bufferSizeBonus)));
   }, [bufferSizeBonus]);
 
-  // Instability buffer controls
   const filledCount = instabilityBuffer.length;
   const canFill = bufferSizeBonus >= 1 && filledCount < bufferSizeBonus;
   const canUnfill = bufferSizeBonus >= 1 && filledCount > 0;
@@ -301,7 +286,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     setInstabilityBuffer((prev) => [...prev, bufferDuration]);
   };
 
-  // remove the earliest filled and shift remaining left
   const onUnfillOne = () => {
     if (!canUnfill) return;
     setInstabilityBuffer((prev) => prev.slice(1));
@@ -376,9 +360,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
   // ---------- Instability rolling ----------
   const getRollModeFor = (slot: StructureKey): RollMode => {
-    if (slot === "core") return "dis"; // always disadvantage (cannot be removed)
+    if (slot === "core") return "dis";
     if (slot === "hull") {
-      // Item 2: Hull rolls with advantage unless Hull is disabled
       const hull = structureState.hull;
       if (hull.state === "disabled") return "normal";
       return "adv";
@@ -423,14 +406,13 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       return;
     }
 
-    // Apply result
     const rollHeader =
       rolls.length === 2
         ? `${mode === "adv" ? "Advantage" : "Disadvantage"}: [${rolls[0]}, ${rolls[1]}] → ${result}`
         : `Roll: ${result}`;
 
     if (result >= 4) {
-      setInstabilityPopup({
+      setPopup({
         open: true,
         title: `Instability (${slot === "core" ? "Core" : SLOT_LABELS[slot]})`,
         body: `${rollHeader}\nNo effect.`,
@@ -438,16 +420,12 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       return;
     }
 
-    // Core is special: applies to core structure only (not core system)
     if (slot === "core") {
       setStructureState((prev) => {
         const cur = normalizeCondition(prev.core);
 
-        if (result === 1) {
-          return { ...prev, core: { state: "destroyed" } };
-        }
+        if (result === 1) return { ...prev, core: { state: "destroyed" } };
 
-        // 2-3 disabled / increment
         if (cur.state === "disabled") {
           return { ...prev, core: { state: "disabled", count: cur.count + 1 } };
         }
@@ -463,7 +441,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             ? `Disabled: ${cur.count + 1}`
             : "Disabled: 2";
 
-      setInstabilityPopup({
+      setPopup({
         open: true,
         title: `Instability (Core)`,
         body: `${rollHeader}\nCore structure is now ${outcome}.`,
@@ -471,12 +449,13 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       return;
     }
 
-    // Non-core: target systems in slot first; if none, apply to structure
     const candidates = installedSystems
       .filter((s) => s.slot === slot)
       .map((s) => ({
         ...s,
-        condition: s.condition ? normalizeCondition(s.condition) : ({ state: "ok" } as const),
+        condition: s.condition
+          ? normalizeCondition(s.condition)
+          : ({ state: "ok" } as const),
       }))
       .filter((s) => isEligibleForTarget(s.condition!));
 
@@ -503,7 +482,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             ? `Disabled: ${cur.count + 1}`
             : "Disabled: 2";
 
-      setInstabilityPopup({
+      setPopup({
         open: true,
         title: `Instability (${SLOT_LABELS[slot]})`,
         body: `${rollHeader}\nNo eligible systems. ${SLOT_LABELS[slot]} structure is now ${outcome}.`,
@@ -524,9 +503,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
         const cur = normalizeCondition(s.condition);
 
-        if (result === 1) {
-          return { ...s, condition: { state: "destroyed" } };
-        }
+        if (result === 1) return { ...s, condition: { state: "destroyed" } };
 
         if (cur.state === "disabled") {
           return { ...s, condition: { state: "disabled", count: cur.count + 1 } };
@@ -538,13 +515,140 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
     const cur = normalizeCondition(targetSystem.condition);
     const outcome =
-      result === 1 ? "Destroyed" : cur.state === "disabled" ? `Disabled: ${cur.count + 1}` : "Disabled: 2";
+      result === 1
+        ? "Destroyed"
+        : cur.state === "disabled"
+          ? `Disabled: ${cur.count + 1}`
+          : "Disabled: 2";
 
-    setInstabilityPopup({
+    setPopup({
       open: true,
       title: `Instability (${SLOT_LABELS[slot]})`,
       body: `${rollHeader}\n${sysName} is now ${outcome}.`,
     });
+  };
+
+  // ---------- Turn progression helpers ----------
+  function progressOneTurnLocal(args: {
+    systems: InstalledSystem[];
+    structures: StructureState;
+    buffer: number[];
+  }): {
+    systems: InstalledSystem[];
+    structures: StructureState;
+    buffer: number[];
+    expiredBufferCount: number;
+  } {
+    // Systems: decrement disabled counters; destroyed unaffected
+    const systemsNext = args.systems.map((s) => {
+      const c = normalizeCondition(s.condition);
+      if (c.state === "destroyed" || c.state === "ok") return { ...s, condition: c };
+      // disabled
+      const nextCount = c.count - 1;
+      if (nextCount < 1) return { ...s, condition: { state: "ok" } };
+      return { ...s, condition: { state: "disabled", count: nextCount } };
+    });
+
+    // Structures: same rule; destroyed unaffected
+    const structuresNext: StructureState = { ...args.structures };
+    (Object.keys(structuresNext) as StructureKey[]).forEach((k) => {
+      const c = normalizeCondition(structuresNext[k]);
+      if (c.state === "destroyed" || c.state === "ok") {
+        structuresNext[k] = c;
+        return;
+      }
+      const nextCount = c.count - 1;
+      if (nextCount < 1) structuresNext[k] = { state: "ok" };
+      else structuresNext[k] = { state: "disabled", count: nextCount };
+    });
+
+    // Buffer: decrement each; remove < 1 and count expiries
+    const decremented = args.buffer.map((n) => Math.trunc(Number(n)) - 1);
+    const expired = decremented.filter((n) => n < 1).length;
+    const bufferNext = decremented.filter((n) => n >= 1);
+
+    return { systems: systemsNext, structures: structuresNext, buffer: bufferNext, expiredBufferCount: expired };
+  }
+
+  const showCriticalBufferWarning = (expiredCount: number) => {
+    setPopup({
+      open: true,
+      title: "CRITICAL WARNING!",
+      body: `${expiredCount} instabilities are no longer able to be managed by the buffer and must be resolved immediately.`,
+    });
+  };
+
+  const commitProgress = async (next: {
+    systems: InstalledSystem[];
+    structures: StructureState;
+    buffer: number[];
+  }, expiredCount: number) => {
+    setInstalledSystems(next.systems);
+    setStructureState(next.structures);
+    setInstabilityBuffer(next.buffer);
+
+    if (expiredCount > 0) showCriticalBufferWarning(expiredCount);
+
+    // persist to Supabase immediately
+    await saveWithOverrides(next.systems, next.structures, next.buffer);
+  };
+
+  const anyDisabledRemaining = (systems: InstalledSystem[], structures: StructureState) => {
+    const sysDisabled = systems.some((s) => normalizeCondition(s.condition).state === "disabled");
+    const structDisabled = (Object.keys(structures) as StructureKey[]).some(
+      (k) => normalizeCondition(structures[k]).state === "disabled",
+    );
+    return sysDisabled || structDisabled;
+  };
+
+  // Fast-forward: advance until all Disabled clears; stop immediately if any buffer expiries happen
+  const fastForward = async () => {
+    if (loading || saving) return;
+
+    let systemsCur = installedSystems;
+    let structuresCur = structureState;
+    let bufferCur = instabilityBuffer;
+
+    // safety cap (prevents runaway loops)
+    for (let i = 0; i < 200; i++) {
+      if (!anyDisabledRemaining(systemsCur, structuresCur)) break;
+
+      const step = progressOneTurnLocal({
+        systems: systemsCur,
+        structures: structuresCur,
+        buffer: bufferCur,
+      });
+
+      systemsCur = step.systems;
+      structuresCur = step.structures;
+      bufferCur = step.buffer;
+
+      // interruption condition: buffer expiries
+      if (step.expiredBufferCount > 0) {
+        await commitProgress(
+          { systems: systemsCur, structures: structuresCur, buffer: bufferCur },
+          step.expiredBufferCount,
+        );
+        return;
+      }
+    }
+
+    await commitProgress({ systems: systemsCur, structures: structuresCur, buffer: bufferCur }, 0);
+  };
+
+  const playOneTurn = async () => {
+    if (loading || saving) return;
+
+    const step = progressOneTurnLocal({
+      systems: installedSystems,
+      structures: structureState,
+      buffer: instabilityBuffer,
+    });
+
+    await commitProgress(
+      { systems: step.systems, structures: step.structures, buffer: step.buffer },
+      step.expiredBufferCount,
+    );
   };
 
   // ---------- Load ----------
@@ -573,19 +677,19 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       }
 
       if (data) {
-        setShellName(data.shell_name ?? "");
+        setShellName((data as any).shell_name ?? "");
         setStats({
-          str: data.str ?? 8,
-          dex: data.dex ?? 8,
-          con: data.con ?? 8,
-          int: data.int ?? 8,
-          wis: data.wis ?? 8,
-          cha: data.cha ?? 8,
+          str: (data as any).str ?? 8,
+          dex: (data as any).dex ?? 8,
+          con: (data as any).con ?? 8,
+          int: (data as any).int ?? 8,
+          wis: (data as any).wis ?? 8,
+          cha: (data as any).cha ?? 8,
         });
 
         const loadedProfs: AbilityKey[] = [];
-        const p1 = (data.save_prof_1 as AbilityKey | null) ?? null;
-        const p2 = (data.save_prof_2 as AbilityKey | null) ?? null;
+        const p1 = ((data as any).save_prof_1 as AbilityKey | null) ?? null;
+        const p2 = ((data as any).save_prof_2 as AbilityKey | null) ?? null;
         if (p1 && STAT_DEFS.some((s) => s.key === p1)) loadedProfs.push(p1);
         if (p2 && STAT_DEFS.some((s) => s.key === p2) && p2 !== p1)
           loadedProfs.push(p2);
@@ -651,7 +755,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         if (Number.isFinite(Number(sc))) {
           setSparesCurrent(Math.max(0, Math.trunc(Number(sc))));
         } else {
-          // default = max (will be clamped by effect)
           setSparesCurrent(null);
         }
       } else {
@@ -684,13 +787,21 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   }, [supabase, userId]);
 
   // ---------- Save ----------
-  const save = async () => {
+  const saveWithOverrides = async (
+    systemsOverride?: InstalledSystem[],
+    structuresOverride?: StructureState,
+    bufferOverride?: number[],
+  ) => {
     setSaving(true);
     setError(null);
     setSavedAt(null);
 
+    const systemsToSave = systemsOverride ?? installedSystems;
+    const structuresToSave = structuresOverride ?? structureState;
+    const bufferToSave = bufferOverride ?? instabilityBuffer;
+
     const normalizedBuffer =
-      bufferSizeBonus >= 1 ? instabilityBuffer.slice(0, bufferSizeBonus) : [];
+      bufferSizeBonus >= 1 ? bufferToSave.slice(0, bufferSizeBonus) : [];
 
     const payload = {
       user_id: userId,
@@ -702,11 +813,12 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       core_system_id: coreSystemId,
       frame_specs: frameSpecIds.slice(0, 4),
 
-      installed_systems: installedSystems,
+      installed_systems: systemsToSave,
       instability_buffer: normalizedBuffer,
-      structure_state: structureState,
+      structure_state: structuresToSave,
 
-      spares_current: sparesCurrent === null ? sparesMax : clamp(sparesCurrent, 0, sparesMax),
+      spares_current:
+        sparesCurrent === null ? sparesMax : clamp(sparesCurrent, 0, sparesMax),
 
       updated_at: new Date().toISOString(),
     };
@@ -715,28 +827,29 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       onConflict: "user_id",
     });
 
-    if (error) {
-      setError(error.message);
-    } else {
-      setSavedAt(new Date().toLocaleString());
-    }
+    if (error) setError(error.message);
+    else setSavedAt(new Date().toLocaleString());
 
     setSaving(false);
   };
+
+  const save = async () => saveWithOverrides();
 
   // Instability Buffer layout behavior:
   const showInstabilityBuffer = bufferSizeBonus >= 1;
   const instabilityCompact = filledCount === 0;
 
-  // Core instability allowed ONLY when Hull is destroyed
+  // Core instability allowed ONLY when Hull is Destroyed
   const hullDestroyed = structureState.hull.state === "destroyed";
   const coreInstabilityEnabled = hullDestroyed;
 
   return (
-    <div className="flex w-full flex-col gap-6">
+    <div className="relative flex w-full flex-col gap-6 pb-24">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Shell Configuration</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Shell Configuration
+          </h1>
           <p className="text-sm text-muted-foreground">
             Configure attributes, frame specs, systems, and instabilities.
           </p>
@@ -761,17 +874,17 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         </div>
       )}
 
-      {/* Instability result popup */}
-      {instabilityPopup.open && (
+      {/* Popup */}
+      {popup.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-xl border bg-card p-4 shadow">
-            <div className="text-lg font-semibold">{instabilityPopup.title}</div>
+            <div className="text-lg font-semibold">{popup.title}</div>
             <div className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
-              {instabilityPopup.body}
+              {popup.body}
             </div>
             <div className="mt-4 flex justify-end">
               <Button
-                onClick={() => setInstabilityPopup({ open: false, title: "", body: "" })}
+                onClick={() => setPopup({ open: false, title: "", body: "" })}
               >
                 Close
               </Button>
@@ -811,14 +924,21 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               <div className="text-sm text-muted-foreground">
                 Total invested points (above 8)
               </div>
-              <div className="text-3xl font-semibold tabular-nums">{generation}</div>
+              <div className="text-3xl font-semibold tabular-nums">
+                {generation}
+              </div>
             </div>
 
             <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
               {STAT_DEFS.map(({ key, short }) => (
-                <div key={key} className="rounded-lg border bg-background/20 px-3 py-2">
+                <div
+                  key={key}
+                  className="rounded-lg border bg-background/20 px-3 py-2"
+                >
                   <div className="text-xs text-muted-foreground">{short}</div>
-                  <div className="mt-1 font-medium tabular-nums">{fmtSigned(invested[key])}</div>
+                  <div className="mt-1 font-medium tabular-nums">
+                    {fmtSigned(invested[key])}
+                  </div>
                 </div>
               ))}
             </div>
@@ -874,8 +994,16 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               value={fort}
               contribution="Contrib: STR + CON + CHA (per 3)"
               bonuses={[
-                { label: "Damage Threshold Bonus", value: fmtSigned(damageThresholdBonus), detail: "+2 per Fort" },
-                { label: "Spares Bonus", value: fmtSigned(sparesBonus), detail: "+1 per 2 Fort" },
+                {
+                  label: "Damage Threshold Bonus",
+                  value: fmtSigned(damageThresholdBonus),
+                  detail: "+2 per Fort",
+                },
+                {
+                  label: "Spares Bonus",
+                  value: fmtSigned(sparesBonus),
+                  detail: "+1 per 2 Fort",
+                },
               ]}
             />
 
@@ -884,10 +1012,17 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               value={agility}
               contribution="Contrib: 2×DEX + WIS (per 3)"
               bonuses={[
-                { label: "Armor Class Bonus", value: fmtSigned(armorClassBonus), detail: "+1 per Agility" },
+                {
+                  label: "Armor Class Bonus",
+                  value: fmtSigned(armorClassBonus),
+                  detail: "+1 per Agility",
+                },
                 {
                   label: "Movement Speed Bonus",
-                  value: moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`,
+                  value:
+                    moveSpeedBonusFt === 0
+                      ? "+0 ft"
+                      : `+${moveSpeedBonusFt} ft`,
                   detail: "+10 ft per 2 Agility",
                 },
               ]}
@@ -898,8 +1033,16 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               value={techno}
               contribution="Contrib: INT + WIS + CHA (per 3)"
               bonuses={[
-                { label: "Save DC Bonus", value: fmtSigned(saveDCBonus), detail: "+1 per Techno" },
-                { label: "System Capacity Bonus", value: fmtSigned(systemCapacityBonus), detail: "+1 per 2 Techno" },
+                {
+                  label: "Save DC Bonus",
+                  value: fmtSigned(saveDCBonus),
+                  detail: "+1 per Techno",
+                },
+                {
+                  label: "System Capacity Bonus",
+                  value: fmtSigned(systemCapacityBonus),
+                  detail: "+1 per 2 Techno",
+                },
               ]}
             />
 
@@ -908,8 +1051,16 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               value={internal}
               contribution="Contrib: STR + CON + INT (per 3)"
               bonuses={[
-                { label: "Buffer Size Bonus", value: fmtSigned(bufferSizeBonus), detail: "+1 per Internal" },
-                { label: "Buffer Duration Bonus", value: fmtSigned(bufferDurationBonus), detail: "+1 per 2 Internal" },
+                {
+                  label: "Buffer Size Bonus",
+                  value: fmtSigned(bufferSizeBonus),
+                  detail: "+1 per Internal",
+                },
+                {
+                  label: "Buffer Duration Bonus",
+                  value: fmtSigned(bufferDurationBonus),
+                  detail: "+1 per 2 Internal",
+                },
               ]}
             />
           </div>
@@ -928,10 +1079,12 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               <div className="mt-3 grid gap-2">
                 <Row
                   label="Damage Threshold"
-                  value={`${damageThreshold} (${fmtSigned(damageThresholdBonus)})`}
+                  value={`${damageThreshold} (${fmtSigned(
+                    damageThresholdBonus,
+                  )})`}
                 />
 
-                {/* Item 5: Spares current/max with +/- */}
+                {/* Spares current/max with +/- */}
                 <div className="flex items-center justify-between rounded-md border bg-card/40 px-3 py-2">
                   <div>Spares</div>
                   <div className="flex items-center gap-2">
@@ -939,12 +1092,15 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                       variant="outline"
                       size="sm"
                       onClick={decSpares}
-                      disabled={loading || (sparesCurrent ?? sparesMax) <= 0}
+                      disabled={
+                        loading || (sparesCurrent ?? sparesMax) <= 0
+                      }
                     >
                       −
                     </Button>
                     <div className="font-medium tabular-nums">
-                      {clamp(sparesCurrent ?? sparesMax, 0, sparesMax)}/{sparesMax}{" "}
+                      {clamp(sparesCurrent ?? sparesMax, 0, sparesMax)}/
+                      {sparesMax}{" "}
                       <span className="text-xs text-muted-foreground">
                         ({fmtSigned(sparesBonus)})
                       </span>
@@ -953,7 +1109,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                       variant="outline"
                       size="sm"
                       onClick={incSpares}
-                      disabled={loading || (sparesCurrent ?? sparesMax) >= sparesMax}
+                      disabled={
+                        loading || (sparesCurrent ?? sparesMax) >= sparesMax
+                      }
                     >
                       +
                     </Button>
@@ -961,32 +1119,58 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                 </div>
               </div>
 
-              <div className="mt-6 text-sm font-semibold">Mobility & Defense</div>
+              <div className="mt-6 text-sm font-semibold">
+                Mobility & Defense
+              </div>
               <div className="mt-3 grid gap-2">
                 <Row
                   label="Movement Speed"
-                  value={`${movementSpeedFt} ft (${moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`})`}
+                  value={`${movementSpeedFt} ft (${
+                    moveSpeedBonusFt === 0
+                      ? "+0 ft"
+                      : `+${moveSpeedBonusFt} ft`
+                  })`}
                 />
-                <Row label="Armor Class" value={`${armorClass} (${fmtSigned(armorClassBonus)})`} />
+                <Row
+                  label="Armor Class"
+                  value={`${armorClass} (${fmtSigned(armorClassBonus)})`}
+                />
               </div>
 
-              <div className="mt-6 text-sm font-semibold">Offense & Control</div>
+              <div className="mt-6 text-sm font-semibold">
+                Offense & Control
+              </div>
               <div className="mt-3 grid gap-2">
                 <Row label="Attack Bonus" value={fmtSigned(attackBonus)} />
-                <Row label="Save DC" value={`${saveDC} (${fmtSigned(saveDCBonus)})`} />
-                <Row label="Forward Save Bonus" value={fmtSigned(forwardSaveBonus)} />
+                <Row
+                  label="Save DC"
+                  value={`${saveDC} (${fmtSigned(saveDCBonus)})`}
+                />
+                <Row
+                  label="Forward Save Bonus"
+                  value={fmtSigned(forwardSaveBonus)}
+                />
               </div>
 
               <div className="mt-6 text-sm font-semibold">Sensors</div>
               <div className="mt-3 grid gap-2">
                 <Row label="Sensors Range" value={`${sensorsRangeFt} ft`} />
               </div>
+
+              {/* NEW: Immunities */}
+              <div className="mt-6 text-sm font-semibold">Immunities</div>
+              <div className="mt-3 rounded-md border bg-card/40 px-3 py-2">
+                <div className="text-sm">
+                  Poison, Charmed, Exhaustion, Frightened, Poisoned
+                </div>
+              </div>
             </div>
 
             <div className="rounded-lg border bg-background/20 p-4">
               <div className="text-sm font-semibold">Saving Throws</div>
               <div className="mt-1 text-xs text-muted-foreground">
-                Choose exactly two save proficiencies. Proficiency bonus is {fmtSigned(PROF_BONUS)}.
+                Choose exactly two save proficiencies. Proficiency bonus is{" "}
+                {fmtSigned(PROF_BONUS)}.
               </div>
 
               <div className="mt-4 grid gap-2">
@@ -1010,15 +1194,21 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                         />
                         <label
                           htmlFor={`save-prof-${key}`}
-                          className={`cursor-pointer text-sm ${disableCheck ? "text-muted-foreground" : ""}`}
+                          className={`cursor-pointer text-sm ${
+                            disableCheck ? "text-muted-foreground" : ""
+                          }`}
                         >
                           {label}{" "}
-                          <span className="text-xs text-muted-foreground">({short})</span>
+                          <span className="text-xs text-muted-foreground">
+                            ({short})
+                          </span>
                         </label>
                       </div>
 
                       <div className="text-right">
-                        <div className="font-medium tabular-nums">{fmtSigned(total)}</div>
+                        <div className="font-medium tabular-nums">
+                          {fmtSigned(total)}
+                        </div>
                         <div className="text-xs text-muted-foreground tabular-nums">
                           {fmtSigned(mod)}
                           {isProf ? ` + ${PROF_BONUS}` : ""}
@@ -1031,15 +1221,27 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
               <div className="mt-6 text-sm font-semibold">Skills</div>
               <div className="mt-1 text-xs text-muted-foreground">
-                Shells are proficient in Athletics, Acrobatics, Perception, and Stealth. Proficiency bonus is{" "}
-                {fmtSigned(PROF_BONUS)}.
+                Shells are proficient in Athletics, Acrobatics, Perception, and
+                Stealth. Proficiency bonus is {fmtSigned(PROF_BONUS)}.
               </div>
 
               <div className="mt-4 grid gap-2">
-                <Row label="Athletics (STR)" value={fmtSigned(skillBonus("str"))} />
-                <Row label="Acrobatics (DEX)" value={fmtSigned(skillBonus("dex"))} />
-                <Row label="Perception (WIS)" value={fmtSigned(skillBonus("wis"))} />
-                <Row label="Stealth (DEX)" value={fmtSigned(skillBonus("dex"))} />
+                <Row
+                  label="Athletics (STR)"
+                  value={fmtSigned(skillBonus("str"))}
+                />
+                <Row
+                  label="Acrobatics (DEX)"
+                  value={fmtSigned(skillBonus("dex"))}
+                />
+                <Row
+                  label="Perception (WIS)"
+                  value={fmtSigned(skillBonus("wis"))}
+                />
+                <Row
+                  label="Stealth (DEX)"
+                  value={fmtSigned(skillBonus("dex"))}
+                />
               </div>
             </div>
           </div>
@@ -1055,13 +1257,19 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
           <div className="grid gap-4">
             <div className="flex flex-wrap items-start justify-between gap-3 rounded-md border bg-background/20 p-3">
               <div>
-                <div className="text-sm font-semibold">Select 4 Frame Specs</div>
+                <div className="text-sm font-semibold">
+                  Select 4 Frame Specs
+                </div>
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-xs text-muted-foreground tabular-nums">
                   Selected: {frameSpecIds.length}/4
                 </div>
-                <Button variant="outline" onClick={() => setFrameSpecsOpen(true)} disabled={loading}>
+                <Button
+                  variant="outline"
+                  onClick={() => setFrameSpecsOpen(true)}
+                  disabled={loading}
+                >
                   Choose Specs
                 </Button>
               </div>
@@ -1071,12 +1279,19 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               <div className="text-sm font-semibold">Selected</div>
               <div className="mt-2 grid gap-2">
                 {selectedFrameSpecs.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">No frame specs selected yet.</div>
+                  <div className="text-sm text-muted-foreground">
+                    No frame specs selected yet.
+                  </div>
                 ) : (
                   selectedFrameSpecs.map((s) => (
-                    <div key={s.id} className="rounded-md border bg-card/40 px-3 py-2">
+                    <div
+                      key={s.id}
+                      className="rounded-md border bg-card/40 px-3 py-2"
+                    >
                       <div className="text-sm font-medium">{s.name}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">{s.description}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {s.description}
+                      </div>
                     </div>
                   ))
                 )}
@@ -1114,8 +1329,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {/* Core section:
-                  Item 3: Only when Hull is Destroyed, Core can roll instabilities (disadvantage). */}
               <CoreSection
                 title="Core"
                 subtitle={coreSystemName ? coreSystemName : "Select Core System"}
@@ -1247,7 +1460,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               <div className="text-sm font-semibold">Installed Systems</div>
               <div className="mt-2 grid gap-2">
                 {installedSystems.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">No systems installed yet.</div>
+                  <div className="text-sm text-muted-foreground">
+                    No systems installed yet.
+                  </div>
                 ) : (
                   installedSystems.map((inst) => {
                     const def = SYSTEMS.find((s) => s.id === inst.systemId);
@@ -1305,7 +1520,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                           </div>
 
                           <div className="flex flex-col gap-2">
-                            {(cond.state === "disabled" || cond.state === "destroyed") && (
+                            {(cond.state === "disabled" ||
+                              cond.state === "destroyed") && (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -1344,7 +1560,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               getSystemCost={getSystemCost}
               getSlotCost={getSlotCost}
               getTotalCost={getTotalCost}
-              onInstall={(systemId: string, slot: SystemSlot) => installSystem(systemId, slot)}
+              onInstall={(systemId: string, slot: SystemSlot) =>
+                installSystem(systemId, slot)
+              }
             />
           </div>
         </CardContent>
@@ -1361,12 +1579,17 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background/20 p-3">
               <div>
                 <div className="text-sm font-semibold">
-                  Buffer Size {bufferSizeBonus} · Buffer Duration {bufferDuration}
+                  Buffer Size {bufferSizeBonus} · Buffer Duration{" "}
+                  {bufferDuration}
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={onUnfillOne} disabled={loading || !canUnfill}>
+                <Button
+                  variant="outline"
+                  onClick={onUnfillOne}
+                  disabled={loading || !canUnfill}
+                >
                   −
                 </Button>
                 <div className="text-sm tabular-nums">
@@ -1380,12 +1603,40 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
             {filledCount > 0 && (
               <div className="mt-4">
-                <HexGridRowByRow capacity={bufferSizeBonus} filledValues={instabilityBuffer} perRow={8} />
+                <HexGridRowByRow
+                  capacity={bufferSizeBonus}
+                  filledValues={instabilityBuffer}
+                  perRow={8}
+                />
               </div>
             )}
           </CardContent>
         </Card>
       )}
+
+      {/* VERY BOTTOM TURN CONTROLS */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/80 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-end gap-2 p-3">
+          <Button
+            variant="outline"
+            onClick={playOneTurn}
+            disabled={loading || saving}
+            title="Advance 1 turn"
+          >
+            <Play className="mr-2 h-4 w-4" />
+            Turn
+          </Button>
+
+          <Button
+            onClick={fastForward}
+            disabled={loading || saving}
+            title="Advance until all Disabled clears (stops if buffer expires)"
+          >
+            <FastForward className="mr-2 h-4 w-4" />
+            Fast-forward
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1410,7 +1661,9 @@ function AuxCard(props: {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-base font-semibold">{props.title}</div>
-          <div className="mt-1 text-xs text-muted-foreground">{props.contribution}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {props.contribution}
+          </div>
         </div>
         <div className="text-2xl font-semibold tabular-nums">{props.value}</div>
       </div>
@@ -1450,7 +1703,8 @@ function CoreSection(props: {
   onRepair: () => void;
 }) {
   const status = conditionLabel(props.condition);
-  const showRepair = props.condition.state === "disabled" || props.condition.state === "destroyed";
+  const showRepair =
+    props.condition.state === "disabled" || props.condition.state === "destroyed";
 
   return (
     <div className="relative rounded-lg border bg-background/20 px-4 py-3">
@@ -1472,7 +1726,9 @@ function CoreSection(props: {
               </span>
             )}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">{props.subtitle}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {props.subtitle}
+          </div>
         </button>
 
         <div className="flex flex-col items-end gap-2">
@@ -1484,7 +1740,7 @@ function CoreSection(props: {
                   size="sm"
                   onClick={props.onStartInstability}
                   disabled={props.disabled}
-                  title="Roll Instability (Disadvantage)"
+                  title="Roll Instability"
                   className="h-8 px-2"
                 >
                   <span className="text-xs font-semibold">⚠</span>
@@ -1549,7 +1805,8 @@ function SectionWithInstabilityConfirm(props: {
   onClick: () => void;
 }) {
   const status = conditionLabel(props.condition);
-  const showRepair = props.condition.state === "disabled" || props.condition.state === "destroyed";
+  const showRepair =
+    props.condition.state === "disabled" || props.condition.state === "destroyed";
 
   return (
     <div className="relative rounded-lg border bg-background/20 px-4 py-3">
@@ -1571,7 +1828,9 @@ function SectionWithInstabilityConfirm(props: {
               </span>
             )}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">{props.subtitle}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {props.subtitle}
+          </div>
         </button>
 
         <div className="flex flex-col items-end gap-2">
@@ -1635,7 +1894,7 @@ function SectionWithInstabilityConfirm(props: {
 function HexGridRowByRow(props: {
   capacity: number;
   filledValues: number[];
-  perRow: number; // 8
+  perRow: number;
 }) {
   const { capacity, filledValues, perRow } = props;
   const filled = filledValues.length;
