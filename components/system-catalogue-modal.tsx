@@ -157,8 +157,8 @@ export function SystemCatalogueModal(props: {
             </div>
           </div>
           <div className="rounded-md border bg-background/20 px-3 py-2">
-            <div className="text-xs text-muted-foreground">Uniqueness</div>
-            <div className="mt-1 font-medium">One of each system</div>
+            <div className="text-xs text-muted-foreground">Uniqueness clause</div>
+            <div className="mt-1 font-medium">No duplicate systems</div>
           </div>
         </div>
 
@@ -177,7 +177,7 @@ export function SystemCatalogueModal(props: {
               const disabled = alreadyInstalled || slotOver || totalOver;
 
               let reason: string | null = null;
-              if (alreadyInstalled) reason = "Already installed (unique).";
+              if (alreadyInstalled) reason = "Already installed.";
               else if (slotOver)
                 reason = `Exceeds ${SLOT_LABELS[slot]} cap (${perSlotCap}).`;
               else if (totalOver) reason = `Exceeds total cap (${totalCap}).`;
@@ -241,9 +241,6 @@ export function SystemCatalogueModal(props: {
           </div>
         </div>
 
-        <div className="mt-4 border-t pt-3 text-xs text-muted-foreground">
-          Note: Core is special and managed separately.
-        </div>
       </div>
     </div>
   );

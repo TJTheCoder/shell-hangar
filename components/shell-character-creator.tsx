@@ -933,7 +933,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             <Label htmlFor="shellName">Designation</Label>
             <Input
               id="shellName"
-              placeholder='e.g., HANGAR-07 “Kestrel”'
+              placeholder='e.g., DIRE-165 "Werewolf"'
               value={shellName}
               onChange={(e) => setShellName(e.target.value)}
               disabled={loading}

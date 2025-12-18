@@ -25,8 +25,7 @@ export default function Home() {
             </Link>
 
             <div className="hidden items-center gap-2 md:flex">
-              <span className="hangar-pill">SYSTEM: NOMINAL</span>
-              <span className="hangar-pill">RULESET: CUSTOM</span>
+              <span className="hangar-pill">SYSTEMS: NOMINAL</span>
             </div>
           </div>
 
@@ -57,13 +56,11 @@ export default function Home() {
                 </div>
 
                 <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">
-                  Configure shells. Validate loadouts. Generate mission sheets.
+                  &gt;//[BRWN-T]: Greetings, knight. I've prepared the hangar for you.
                 </h1>
 
                 <p className="max-w-2xl text-base text-muted-foreground md:text-lg">
-                  Shell Hangar is a COMP/CON-style builder for your table’s
-                  custom ruleset—designed to keep builds consistent and easy to
-                  share.
+                  Shell Hangar is a two-in-one character builder and combat tracker for shells.
                 </p>
               </div>
 
@@ -90,7 +87,7 @@ export default function Home() {
                     !hasEnvVars ? "pointer-events-none opacity-50" : "",
                   ].join(" ")}
                 >
-                  Create Pilot ID
+                  Register Pilot
                 </Link>
 
                 {!hasEnvVars && (
@@ -101,6 +98,7 @@ export default function Home() {
               </div>
 
               {/* Spec strip */}
+              {/*}
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="hangar-subpanel">
                   <div className="text-xs text-muted-foreground">STORAGE</div>
@@ -119,6 +117,7 @@ export default function Home() {
                   <div className="mt-1 font-medium">Print Sheets</div>
                 </div>
               </div>
+              */}
             </div>
           </div>
 
@@ -130,30 +129,27 @@ export default function Home() {
                 <h2 className="text-base font-semibold">Shell Builder</h2>
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
-                Assemble frames, modules, weapons, and systems with fast,
-                readable constraints.
+                Assemble shells from the ground-up, choosing stats, frame specs, and systems.
               </p>
             </div>
 
             <div className="hangar-panel p-6">
               <div className="flex items-center gap-3">
                 <ShieldCheck className="h-5 w-5 text-primary" />
-                <h2 className="text-base font-semibold">Integrity Checks</h2>
+                <h2 className="text-base font-semibold">Combat Tracker</h2>
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
-                Flag illegal combinations, missing requirements, and capacity
-                issues before session night.
+                Keep track of disabilities and instability timers on a turn-by-turn basis.
               </p>
             </div>
 
             <div className="hangar-panel p-6">
               <div className="flex items-center gap-3">
                 <FileText className="h-5 w-5 text-primary" />
-                <h2 className="text-base font-semibold">Mission Sheet Output</h2>
+                <h2 className="text-base font-semibold">Database Storage</h2>
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
-                Export a clean reference sheet for pilots and shells, ready for
-                print or digital play.
+                All details about your shell will be securely stored in the cloud to access at any time.
               </p>
             </div>
           </div>
@@ -161,15 +157,14 @@ export default function Home() {
           {/* Footer */}
           <footer className="mt-14 flex flex-col items-start justify-between gap-3 border-t border-border/60 py-10 text-xs text-muted-foreground md:flex-row md:items-center">
             <p>
-              Shell Hangar is a tabletop utility. Configure it to match your
-              campaign’s rules.
+              Many thanks to our citizenry, whose taxpayer credits keep this service operational.
             </p>
             <div className="flex items-center gap-4">
               <Link href="/auth/login" className="hover:text-foreground">
-                Sign in
+                Authenticate Index
               </Link>
               <Link href="/auth/sign-up" className="hover:text-foreground">
-                Create Pilot ID
+                Register Pilot
               </Link>
             </div>
           </footer>

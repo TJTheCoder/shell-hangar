@@ -85,10 +85,6 @@ export function CoreSystemModal(props: {
           })}
         </div>
 
-        <div className="mt-4 border-t pt-3 text-xs text-muted-foreground">
-          Note: Any “advantage” or action-economy effects are rules text for now
-          and can be made mechanical later.
-        </div>
       </div>
     </div>
   );
