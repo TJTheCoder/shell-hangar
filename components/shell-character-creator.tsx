@@ -53,11 +53,9 @@ const DEFAULT_STATS: Stats = {
 };
 
 const fmtSigned = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
-
 const abilityMod = (score: number) => Math.floor((score - 10) / 2);
 
 const PROF_BONUS = 6;
-
 const PER_SLOT_CAP = 6;
 
 const SLOT_LABELS: Record<SystemSlot, string> = {
@@ -88,18 +86,18 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const [shellName, setShellName] = useState("");
   const [stats, setStats] = useState<Stats>(DEFAULT_STATS);
 
-  // saving throw proficiencies (choose 2)
+  // choose two save proficiencies
   const [saveProfs, setSaveProfs] = useState<AbilityKey[]>([]);
 
-  // core system (exactly one)
+  // Core system
   const [coreSystemId, setCoreSystemId] = useState<string | null>(null);
   const [coreModalOpen, setCoreModalOpen] = useState(false);
 
-  // frame specs (pick 4)
+  // Frame specs (pick 4)
   const [frameSpecIds, setFrameSpecIds] = useState<string[]>([]);
   const [frameSpecsOpen, setFrameSpecsOpen] = useState(false);
 
-  // systems
+  // Systems
   const [installedSystems, setInstalledSystems] = useState<InstalledSystem[]>(
     [],
   );
@@ -107,7 +105,10 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const [catalogueDefaultSlot, setCatalogueDefaultSlot] =
     useState<SystemSlot>("hull");
 
-  // ui state
+  // Instability Buffer (array of filled hex values)
+  const [instabilityBuffer, setInstabilityBuffer] = useState<number[]>([]);
+
+  // UI state
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,13 +155,13 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     invested.wis +
     invested.cha;
 
-  // Aux stats: +1 per 3 contribution points
+  // Aux stats (+1 per 3 contribution points)
   const fort = Math.floor((invested.str + invested.con + invested.cha) / 3);
   const agility = Math.floor((2 * invested.dex + invested.wis) / 3);
   const techno = Math.floor((invested.int + invested.wis + invested.cha) / 3);
   const internal = Math.floor((invested.str + invested.con + invested.int) / 3);
 
-  // Tertiary bonuses derived from aux stats
+  // Tertiary bonuses
   const damageThresholdBonus = fort * 2;
   const sparesBonus = Math.floor(fort / 2);
 
@@ -174,7 +175,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const bufferSizeBonus = internal;
   const bufferDurationBonus = Math.floor(internal / 2);
 
-  // Saving throws + skills
   const saveBonus = (key: AbilityKey) =>
     abilityMod(stats[key]) + (saveProfs.includes(key) ? PROF_BONUS : 0);
 
@@ -185,6 +185,29 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   // Systems caps
   const TOTAL_CAP = 19 + systemCapacityBonus;
 
+  // If Buffer Size shrinks, trim the instability buffer automatically
+  useEffect(() => {
+    setInstabilityBuffer((prev) => prev.slice(0, Math.max(0, bufferSizeBonus)));
+  }, [bufferSizeBonus]);
+
+  // Instability buffer controls
+  const filledCount = instabilityBuffer.length;
+  const canFill = bufferSizeBonus >= 1 && filledCount < bufferSizeBonus;
+  const canUnfill = bufferSizeBonus >= 1 && filledCount > 0;
+
+  const onFillOne = () => {
+    if (!canFill) return;
+    setInstabilityBuffer((prev) => [...prev, bufferDurationBonus]);
+  };
+
+  // Per your wording: “first hex is unfilled and everything moved over”
+  // That implies removing the earliest filled cell (shift).
+  const onUnfillOne = () => {
+    if (!canUnfill) return;
+    setInstabilityBuffer((prev) => prev.slice(1));
+  };
+
+  // Systems cost helpers
   const systemCostById = useMemo(() => {
     const map = new Map<string, number>();
     for (const s of SYSTEMS) map.set(s.id, s.cost);
@@ -248,7 +271,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       const { data, error } = await supabase
         .from("characters")
         .select(
-          "shell_name,str,dex,con,int,wis,cha,save_prof_1,save_prof_2,installed_systems,core_system_id,frame_specs",
+          "shell_name,str,dex,con,int,wis,cha,save_prof_1,save_prof_2,installed_systems,core_system_id,frame_specs,instability_buffer",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -304,6 +327,17 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         } else {
           setInstalledSystems([]);
         }
+
+        const rawBuffer = (data as any).instability_buffer;
+        if (Array.isArray(rawBuffer)) {
+          const cleaned = rawBuffer
+            .map((n: any) => Number(n))
+            .filter((n: any) => Number.isFinite(n))
+            .map((n: number) => Math.trunc(n));
+          setInstabilityBuffer(cleaned);
+        } else {
+          setInstabilityBuffer([]);
+        }
       } else {
         setShellName("");
         setStats(DEFAULT_STATS);
@@ -311,6 +345,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         setCoreSystemId(null);
         setFrameSpecIds([]);
         setInstalledSystems([]);
+        setInstabilityBuffer([]);
       }
 
       setLoading(false);
@@ -329,6 +364,11 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     setError(null);
     setSavedAt(null);
 
+    const normalizedBuffer =
+      bufferSizeBonus >= 1
+        ? instabilityBuffer.slice(0, bufferSizeBonus)
+        : [];
+
     const payload = {
       user_id: userId,
       shell_name: shellName.trim(),
@@ -340,6 +380,10 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       frame_specs: frameSpecIds.slice(0, 4),
 
       installed_systems: installedSystems,
+
+      // new persistence
+      instability_buffer: normalizedBuffer,
+
       updated_at: new Date().toISOString(),
     };
 
@@ -364,8 +408,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             Shell Configuration
           </h1>
           <p className="text-sm text-muted-foreground">
-            Configure attributes, derived systems, proficiencies, frame specs,
-            and installed systems.
+            Configure attributes, proficiencies, frame specs, and systems.
           </p>
         </div>
 
@@ -477,67 +520,86 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         </CardContent>
       </Card>
 
-      {/* Derived Systems */}
+      {/* Derived Attributes (redesigned) */}
       <Card>
         <CardHeader>
-          <CardTitle>Derived Systems</CardTitle>
+          <CardTitle>Derived Attributes</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-lg border bg-background/20 p-4">
-              <div className="text-sm font-semibold">Auxiliary Stats</div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <AuxTile
-                  title="Fort"
-                  value={fort}
-                  detail="Contrib: STR + CON + CHA (per 3)"
-                />
-                <AuxTile
-                  title="Agility"
-                  value={agility}
-                  detail="Contrib: 2×DEX + WIS (per 3)"
-                />
-                <AuxTile
-                  title="Techno"
-                  value={techno}
-                  detail="Contrib: INT + WIS + CHA (per 3)"
-                />
-                <AuxTile
-                  title="Internal"
-                  value={internal}
-                  detail="Contrib: STR + CON + INT (per 3)"
-                />
-              </div>
-            </div>
+            <AuxCard
+              title="Fort"
+              value={fort}
+              contribution="Contrib: STR + CON + CHA (per 3)"
+              bonuses={[
+                {
+                  label: "Damage Threshold",
+                  value: fmtSigned(damageThresholdBonus),
+                  detail: "+2 per Fort",
+                },
+                {
+                  label: "Spares",
+                  value: fmtSigned(sparesBonus),
+                  detail: "+1 per 2 Fort",
+                },
+              ]}
+            />
 
-            <div className="rounded-lg border bg-background/20 p-4">
-              <div className="text-sm font-semibold">Tertiary Bonuses</div>
-              <div className="mt-3 grid gap-2">
-                <Row
-                  label="Damage Threshold"
-                  value={fmtSigned(damageThresholdBonus)}
-                />
-                <Row label="Spares" value={fmtSigned(sparesBonus)} />
-                <Row label="AC" value={fmtSigned(acBonus)} />
-                <Row
-                  label="Movement Speed"
-                  value={
-                    moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`
-                  }
-                />
-                <Row label="Save DC" value={fmtSigned(saveDCBonus)} />
-                <Row label="Saving Throws" value={fmtSigned(savingThrowsBonus)} />
-                <Row
-                  label="System Capacity"
-                  value={fmtSigned(systemCapacityBonus)}
-                />
-                <Row label="Buffer Size" value={fmtSigned(bufferSizeBonus)} />
-                <Row
-                  label="Buffer Duration"
-                  value={fmtSigned(bufferDurationBonus)}
-                />
-              </div>
-            </div>
+            <AuxCard
+              title="Agility"
+              value={agility}
+              contribution="Contrib: 2×DEX + WIS (per 3)"
+              bonuses={[
+                { label: "AC", value: fmtSigned(acBonus), detail: "+1 per Agility" },
+                {
+                  label: "Movement Speed",
+                  value:
+                    moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`,
+                  detail: "+10 ft per 2 Agility",
+                },
+              ]}
+            />
+
+            <AuxCard
+              title="Techno"
+              value={techno}
+              contribution="Contrib: INT + WIS + CHA (per 3)"
+              bonuses={[
+                { label: "Save DC", value: fmtSigned(saveDCBonus), detail: "+1 per Techno" },
+                {
+                  label: "Saving Throws",
+                  value: fmtSigned(savingThrowsBonus),
+                  detail: "+1 per Techno",
+                },
+                {
+                  label: "System Capacity",
+                  value: fmtSigned(systemCapacityBonus),
+                  detail: "+1 per 2 Techno",
+                },
+              ]}
+            />
+
+            <AuxCard
+              title="Internal"
+              value={internal}
+              contribution="Contrib: STR + CON + INT (per 3)"
+              bonuses={[
+                {
+                  label: "Buffer Size",
+                  value: fmtSigned(bufferSizeBonus),
+                  detail: "+1 per Internal",
+                },
+                {
+                  label: "Buffer Duration",
+                  value: fmtSigned(bufferDurationBonus),
+                  detail: "+1 per 2 Internal",
+                },
+              ]}
+            />
+          </div>
+
+          <div className="mt-4 text-xs text-muted-foreground">
+            All tertiary bonuses are shown even when 0.
           </div>
         </CardContent>
       </Card>
@@ -608,39 +670,20 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                   );
                 })}
               </div>
-
-              {saveProfs.length !== 2 && (
-                <div className="mt-3 text-xs text-muted-foreground">
-                  You must select {2 - saveProfs.length} more proficiency
-                  {2 - saveProfs.length === 1 ? "" : "ies"}.
-                </div>
-              )}
             </div>
 
             <div className="rounded-lg border bg-background/20 p-4">
               <div className="text-sm font-semibold">Skills</div>
               <div className="mt-1 text-xs text-muted-foreground">
-                Shells are proficient in the following skills. Proficiency bonus
-                is {fmtSigned(PROF_BONUS)}.
+                Shells are proficient in Athletics, Acrobatics, Perception, and
+                Stealth. Proficiency bonus is {fmtSigned(PROF_BONUS)}.
               </div>
 
               <div className="mt-4 grid gap-2">
-                <Row
-                  label="Athletics (STR)"
-                  value={fmtSigned(skillBonus("str"))}
-                />
-                <Row
-                  label="Acrobatics (DEX)"
-                  value={fmtSigned(skillBonus("dex"))}
-                />
-                <Row
-                  label="Perception (WIS)"
-                  value={fmtSigned(skillBonus("wis"))}
-                />
-                <Row
-                  label="Stealth (DEX)"
-                  value={fmtSigned(skillBonus("dex"))}
-                />
+                <Row label="Athletics (STR)" value={fmtSigned(skillBonus("str"))} />
+                <Row label="Acrobatics (DEX)" value={fmtSigned(skillBonus("dex"))} />
+                <Row label="Perception (WIS)" value={fmtSigned(skillBonus("wis"))} />
+                <Row label="Stealth (DEX)" value={fmtSigned(skillBonus("dex"))} />
               </div>
 
               <div className="mt-6">
@@ -662,7 +705,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         </CardContent>
       </Card>
 
-      {/* Frame Specs (goes right above Systems) */}
+      {/* Frame Specs */}
       <Card>
         <CardHeader>
           <CardTitle>Frame Specs</CardTitle>
@@ -671,9 +714,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
           <div className="grid gap-4">
             <div className="flex flex-wrap items-start justify-between gap-3 rounded-md border bg-background/20 p-3">
               <div>
-                <div className="text-sm font-semibold">
-                  Select 4 Frame Specs
-                </div>
+                <div className="text-sm font-semibold">Select 4 Frame Specs</div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   Frame Specs are persistent modifiers; choose four.
                 </div>
@@ -800,7 +841,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               />
             </div>
 
-            {/* Core modal */}
             <CoreSystemModal
               open={coreModalOpen}
               onClose={() => setCoreModalOpen(false)}
@@ -810,7 +850,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               onClear={() => setCoreSystemId(null)}
             />
 
-            {/* Installed list */}
             <div className="rounded-lg border bg-background/20 p-4">
               <div className="text-sm font-semibold">Installed Systems</div>
               <div className="mt-2 grid gap-2">
@@ -868,7 +907,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               </div>
             </div>
 
-            {/* Catalogue modal */}
             <SystemCatalogueModal
               open={catalogueOpen}
               onClose={() => setCatalogueOpen(false)}
@@ -885,6 +923,56 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Instability Buffer (only if Buffer Size >= 1) */}
+      {bufferSizeBonus >= 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Instability Buffer</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background/20 p-3">
+              <div>
+                <div className="text-sm font-semibold">
+                  Buffer Size {bufferSizeBonus} · Buffer Duration{" "}
+                  {bufferDurationBonus}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Fill adds duration into the next hex. Unfill removes the first
+                  filled hex and shifts the rest left.
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={onUnfillOne}
+                  disabled={loading || !canUnfill}
+                >
+                  −
+                </Button>
+                <div className="text-sm tabular-nums">
+                  {filledCount}/{bufferSizeBonus}
+                </div>
+                <Button
+                  onClick={onFillOne}
+                  disabled={loading || !canFill}
+                >
+                  +
+                </Button>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <HexGrid
+                total={bufferSizeBonus}
+                filledValues={instabilityBuffer}
+                perRow={8}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -898,14 +986,38 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function AuxTile(props: { title: string; value: number; detail: string }) {
+function AuxCard(props: {
+  title: string;
+  value: number;
+  contribution: string;
+  bonuses: Array<{ label: string; value: string; detail: string }>;
+}) {
   return (
-    <div className="rounded-md border bg-card/40 p-3">
-      <div className="flex items-center justify-between">
-        <div className="font-medium">{props.title}</div>
-        <div className="font-semibold tabular-nums">{props.value}</div>
+    <div className="rounded-lg border bg-background/20 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-base font-semibold">{props.title}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {props.contribution}
+          </div>
+        </div>
+        <div className="text-2xl font-semibold tabular-nums">{props.value}</div>
       </div>
-      <div className="mt-1 text-xs text-muted-foreground">{props.detail}</div>
+
+      <div className="mt-3 grid gap-2">
+        {props.bonuses.map((b) => (
+          <div
+            key={b.label}
+            className="flex items-start justify-between gap-3 rounded-md border bg-card/40 px-3 py-2"
+          >
+            <div>
+              <div className="text-sm font-medium">{b.label}</div>
+              <div className="text-xs text-muted-foreground">{b.detail}</div>
+            </div>
+            <div className="font-semibold tabular-nums">{b.value}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -932,5 +1044,55 @@ function SectionButton(props: {
       <div className="text-sm font-semibold">{props.title}</div>
       <div className="mt-1 text-xs text-muted-foreground">{props.subtitle}</div>
     </button>
+  );
+}
+
+function HexGrid(props: {
+  total: number;
+  filledValues: number[];
+  perRow: number; // 8
+}) {
+  const { total, filledValues, perRow } = props;
+
+  const cells = Array.from({ length: total }, (_, i) => {
+    const filled = i < filledValues.length;
+    const value = filled ? filledValues[i] : null;
+    return { filled, value, key: i };
+  });
+
+  // use CSS grid; 8 per row as requested
+  return (
+    <div
+      className="grid gap-2"
+      style={{ gridTemplateColumns: `repeat(${perRow}, minmax(0, 1fr))` }}
+    >
+      {cells.map((c) => (
+        <HexCell key={c.key} filled={c.filled} value={c.value} />
+      ))}
+    </div>
+  );
+}
+
+function HexCell(props: { filled: boolean; value: number | null }) {
+  return (
+    <div
+      className={[
+        "aspect-square w-full",
+        "flex items-center justify-center",
+        "border",
+        props.filled ? "bg-accent text-accent-foreground" : "bg-background/10",
+      ].join(" ")}
+      style={{
+        clipPath:
+          "polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%)",
+      }}
+      aria-label={props.filled ? `Filled: ${props.value}` : "Empty"}
+    >
+      {props.filled ? (
+        <span className="text-sm font-semibold tabular-nums">
+          {props.value}
+        </span>
+      ) : null}
+    </div>
   );
 }
