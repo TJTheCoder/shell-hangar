@@ -66,4 +66,16 @@ export const FRAME_SPECS: FrameSpecDef[] = [
     description:
       "The amount of Spares used for repairs at a dedicated hangar or engineering bay is additionally demoted by one tier (4>2>1>0).",
   },
+  {
+    id: "camera-camouflage",
+    name: "Camera Camouflage",
+    description:
+      "You become Invisible at the end of your turn if you haven't moved. This lasts until you move, take a reaction, or the start of your next turn.",
+  },
+  {
+    id: "enhanced-scanner",
+    name: "Enhanced Scanner",
+    description:
+      "When you mark a creature, the attack that consumes the mark bypasses resistances.",
+  },
 ];
