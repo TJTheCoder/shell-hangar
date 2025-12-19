@@ -25,6 +25,13 @@ export const BASE_ACTIONS: CombatAction[] = [
       "You, the pilot, order the shell to autonomously operate under the Stay, Follow, Approach, or Retreat protocols. A protocol can only be activated while within range of Sensors, and is deactivated once the shell is operated manually in any way.",
   },
   {
+    id: "surge",
+    name: "Surge",
+    type: "FIRST",
+    description:
+      "You overclock your core, allowing you to gain 1 additional AP this turn. You take 1 instability.",
+  },
+  {
     id: "dash",
     name: "Dash",
     type: "AP1",
@@ -36,7 +43,7 @@ export const BASE_ACTIONS: CombatAction[] = [
     name: "Grapple",
     type: "AP1",
     description:
-      "You attempt to grapple a target (the target makes a STR/DEX saving throw against 14 + your STR). You must have at least one arm available.",
+      "You attempt to grapple a target (the target makes a STR/DEX saving throw against 14 + your STR) within 10 ft. You must have at least one arm available.",
   },
   {
     id: "hide",
@@ -85,7 +92,7 @@ export const BASE_ACTIONS: CombatAction[] = [
     name: "Self-Destruct",
     type: "AP1",
     description:
-      "You initiate the self-destruct sequence, setting the countdown to either the end of your current turn or the end of your next turn. Once the countdown expires, the mech destructively explodes in a 20 ft. radius, dealing 12d6 bludgeoning damage and 12d6 force damage to everyone who fails a DC 15 Dexterity save. Creature that succeed take half damage. You can take this action again to disable the detonation sequence.",
+      "You initiate the self-destruct sequence, setting the countdown to either the end of your current turn or the end of your next turn. Once the countdown expires, the mech destructively explodes in a 20 ft. radius, dealing 12d6 thunder damage and 12d6 force damage to everyone who fails a DC 15 Dexterity save. Creature that succeed take half damage. You can take this action again to disable the detonation sequence.",
   },
   {
     id: "disengage",
