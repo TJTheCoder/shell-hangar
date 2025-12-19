@@ -43,12 +43,6 @@ export const FRAME_SPECS: FrameSpecDef[] = [
       "You have resistance to fire, cold, lightning, thunder, and acid damage.",
   },
   {
-    id: "weather-plating",
-    name: "Weather Plating",
-    description:
-      "You have resistance to fire, cold, lightning, thunder, and acid damage.",
-  },
-  {
     id: "gigantus",
     name: "Gigantus",
     description:
