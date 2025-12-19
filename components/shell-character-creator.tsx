@@ -94,6 +94,14 @@ function sortedTags(tags?: string[]) {
   return (tags ?? []).slice().sort((a, b) => a.localeCompare(b));
 }
 
+function parseComplexity(tags?: string[]) {
+  for (const t of tags ?? []) {
+    const m = /^Complexity:\s*(\d+)\s*$/i.exec(String(t).trim());
+    if (m) return Math.max(0, Math.trunc(Number(m[1])));
+  }
+  return 0;
+}
+
 function normalizeCondition(input: any): SystemCondition {
   if (!input || typeof input !== "object") return { state: "ok" };
   if (input.state === "destroyed") return { state: "destroyed" };
@@ -769,6 +777,29 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     setSaving(false);
   };
 
+  const useSystemById = async (systemId: string, turns?: number) => {
+    const def = SYSTEMS.find((s) => s.id === systemId);
+    const inferred = turns ?? parseComplexity(def?.tags);
+    if (!def || inferred <= 0) return;
+
+    const next: InstalledSystem[] = installedSystems.map((s) => {
+      if (s.systemId !== systemId) return s;
+
+      const cur = normalizeCondition(s.condition);
+      if (cur.state === "destroyed") return s;
+
+      const nextCount =
+        cur.state === "disabled" ? Math.max(cur.count, inferred) : inferred;
+
+      const nextCond: SystemCondition = { state: "disabled", count: nextCount };
+
+      return { ...s, condition: nextCond };
+    });
+
+    setInstalledSystems(next);
+    await saveWithOverrides({ installed_systems: next });
+  };
+
   const save = async () => saveWithOverrides();
 
   // ---------- Turn progression ----------
@@ -1406,6 +1437,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                     const cond = normalizeCondition(inst.condition);
                     const status = conditionLabel(cond);
                     const muted = cond.state !== "ok";
+                    const complexityTurns = parseComplexity(def?.tags);
+                    const canUseComplexity =
+                      complexityTurns > 0 && cond.state !== "destroyed";
 
                     return (
                       <div
@@ -1451,6 +1485,18 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                           </div>
 
                           <div className="flex flex-col gap-2">
+                            {complexityTurns > 0 && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => useSystemById(inst.systemId, complexityTurns)}
+                                disabled={loading || advancing || cond.state !== "ok"}
+                                title={`Use (disables for ${complexityTurns} turns)`}
+                              >
+                                Use
+                              </Button>
+                            )}
+
                             {(cond.state === "disabled" || cond.state === "destroyed") && (
                               <Button
                                 variant="outline"
@@ -1547,7 +1593,10 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
           <CardTitle>Combat</CardTitle>
         </CardHeader>
         <CardContent>
-          <CombatSection installedSystems={combatInstalledSystems} />
+          <CombatSection
+            installedSystems={combatInstalledSystems}
+            onUseSystem={(id, turns) => useSystemById(id, turns)}
+          />
         </CardContent>
       </Card>
 
