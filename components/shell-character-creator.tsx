@@ -395,6 +395,23 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       .map((s) => s!);
   }, [frameSpecIds]);
 
+  // Frame Specs can also provide combat actions via tags like "AP: 1", "Reaction", etc.
+  const combatFrameSpecSystems = useMemo(() => {
+    const defs = new Map(FRAME_SPECS.map((s) => [s.id, s]));
+
+    return frameSpecIds
+      .map((id) => defs.get(id))
+      .filter(Boolean)
+      .map((spec) => ({
+        // Use a stable pseudo-id so CombatSection can key actions consistently
+        id: `frame-spec:${spec!.id}`,
+        name: spec!.name,
+        description: spec!.description ?? "",
+        tags: sortedTags((spec as any).tags ?? []),
+        // Frame specs are not "disabled/destroyed" today; omit condition
+      }));
+  }, [frameSpecIds]);
+
   // Provide CombatSection with installed systems in the shape it expects.
   const combatInstalledSystems = useMemo(() => {
     return installedSystems
@@ -1258,12 +1275,30 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                 {selectedFrameSpecs.length === 0 ? (
                   <div className="text-sm text-muted-foreground">No frame specs selected yet.</div>
                 ) : (
-                  selectedFrameSpecs.map((s) => (
-                    <div key={s.id} className="rounded-md border bg-card/40 px-3 py-2">
-                      <div className="text-sm font-medium">{s.name}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">{s.description}</div>
-                    </div>
-                  ))
+                  selectedFrameSpecs.map((s) => {
+                    const tags = sortedTags((s as any).tags);
+
+                    return (
+                      <div key={s.id} className="rounded-md border bg-card/40 px-3 py-2">
+                        <div className="text-sm font-medium">{s.name}</div>
+
+                        {tags.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {tags.map((t) => (
+                              <span
+                                key={t}
+                                className="rounded-md border bg-background/40 px-2 py-0.5 text-xs"
+                              >
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="mt-1 text-xs text-muted-foreground">{s.description}</div>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -1599,7 +1634,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         </CardHeader>
         <CardContent>
           <CombatSection
-            installedSystems={combatInstalledSystems}
+            installedSystems={[...combatInstalledSystems, ...combatFrameSpecSystems]}
             onUseSystem={(id, turns) => useSystemById(id, turns)}
           />
         </CardContent>

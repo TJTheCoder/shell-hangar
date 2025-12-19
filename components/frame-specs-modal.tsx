@@ -6,6 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 
+function sortedTags(tags?: string[]) {
+  return (tags ?? []).slice().sort((a, b) => a.localeCompare(b));
+}
+
 export function FrameSpecsModal(props: {
   open: boolean;
   onClose: () => void;
@@ -25,7 +29,11 @@ export function FrameSpecsModal(props: {
     return specs.filter(
       (s) =>
         s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q),
+        s.description.toLowerCase().includes(q) ||
+        (Array.isArray((s as any).tags) &&
+          ((s as any).tags as string[]).some((t) =>
+            String(t).toLowerCase().includes(q),
+          )),
     );
   }, [specs, search]);
 
@@ -38,6 +46,7 @@ export function FrameSpecsModal(props: {
         onClick={onClose}
         aria-hidden
       />
+
       <div className="absolute left-1/2 top-1/2 w-[min(920px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-card p-4 shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b pb-3">
           <div>
@@ -65,8 +74,15 @@ export function FrameSpecsModal(props: {
               const checked = selectedSet.has(s.id);
               const disableNew = !checked && selectedIds.length >= maxSelected;
 
+              const tags = Array.isArray((s as any).tags)
+                ? sortedTags((s as any).tags as string[])
+                : [];
+
               return (
-                <div key={s.id} className="rounded-lg border bg-background/20 p-4">
+                <div
+                  key={s.id}
+                  className="rounded-lg border bg-background/20 p-4"
+                >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3">
                       <Checkbox
@@ -75,9 +91,30 @@ export function FrameSpecsModal(props: {
                         disabled={disableNew}
                         onCheckedChange={() => onToggle(s.id)}
                       />
-                      <label htmlFor={`spec-${s.id}`} className="cursor-pointer">
+
+                      <label
+                        htmlFor={`spec-${s.id}`}
+                        className={[
+                          "cursor-pointer",
+                          disableNew && !checked ? "opacity-60" : "",
+                        ].join(" ")}
+                      >
                         <div className="text-base font-semibold">{s.name}</div>
-                        <div className="mt-1 text-sm text-muted-foreground">
+
+                        {tags.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {tags.map((t) => (
+                              <span
+                                key={t}
+                                className="rounded-md border bg-background/40 px-2 py-0.5 text-xs"
+                              >
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="mt-2 text-sm text-muted-foreground">
                           {s.description}
                         </div>
                       </label>

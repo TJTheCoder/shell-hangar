@@ -78,4 +78,11 @@ export const FRAME_SPECS: FrameSpecDef[] = [
     description:
       "When you mark a creature, the attack that consumes the mark bypasses resistances.",
   },
+  {
+    id: "enhanced-scanner2",
+    name: "Enhanced Scanner2",
+    tags: ["AP: 1", "Tech", "Light"],
+    description:
+      "When you mark a creature, the attack that consumes the mark bypasses resistances.",
+  },
 ];
