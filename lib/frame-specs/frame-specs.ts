@@ -55,12 +55,6 @@ export const FRAME_SPECS: FrameSpecDef[] = [
       "Creatures of your choice that start their turn grappled by or within 10 ft. of you take 12 poison damage. They must also succeed on a Constitution saving throw or be Blinded until the end of their turn.",
   },
   {
-    id: "wasp-swarm",
-    name: "W.A.S.P. Swarm",
-    description:
-      "Creatures of your choice that start their turn grappled by or within 10 ft. of you take 12 poison damage. They must also succeed on a Constitution saving throw or be Blinded until the end of their turn.",
-  },
-  {
     id: "regeneration",
     name: "Regeneration",
     description:
