@@ -41,8 +41,8 @@ export const SYSTEMS: SystemDef[] = [
       "You can either throw a smoke grenade w/ range 50 ft. and 20 ft. radius or plant a smoke mine w/ a 30 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. The smoke creates an area of heavy obscurement until the end of your next turn or until dispersed by a strong wind.",
   },
   {
-    id: "acid-charges",
-    name: "Acid Charges",
+    id: "corrosive-charges",
+    name: "Corrosive Charges",
     cost: 2,
     tags: ["AP: 1", "Complexity: 3"],
     description:
