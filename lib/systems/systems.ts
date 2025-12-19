@@ -38,7 +38,15 @@ export const SYSTEMS: SystemDef[] = [
     cost: 2,
     tags: ["AP: 1", "Complexity: 3"],
     description:
-      "You can either throw a smoke grenade w/ range 50 ft. and 20 ft. radius or plant a smoke mine w/ a 30 ft. detonation radius. You can specify specific creatures that trigger or doesn't trigger the mine when planting it. The smoke creates an area of heavy obscurement until the end of your next turn or until dispersed by a strong wind.",
+      "You can either throw a smoke grenade w/ range 50 ft. and 20 ft. radius or plant a smoke mine w/ a 30 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. The smoke creates an area of heavy obscurement until the end of your next turn or until dispersed by a strong wind.",
+  },
+  {
+    id: "acid-charges",
+    name: "Acid Charges",
+    cost: 2,
+    tags: ["AP: 1", "Complexity: 3"],
+    description:
+      "You can either throw an acid grenade that deals 6d6 acid damage w/ range 50 ft. and 10 ft. radius or plant an acid mine that deals 12d6 acid damage w/ a 10 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. All creatures subject to damage must make a Dexterity saving throw. On a success, they take half damage.",
   },
   {
     id: "jump-jets",
@@ -50,7 +58,7 @@ export const SYSTEMS: SystemDef[] = [
   {
     id: "mirage-projector",
     name: "Mirage Projector",
-    cost: 1,
+    cost: 2,
     tags: ["AP: 1", "Tech"],
     description:
       "You force a target creature within range of Sensors to percieve nothing when observing another creature of your choice within range of Sensors. The target percieves the second creature as Invisible until the end of the target's turn. The target must make an Intelligence saving throw.",
