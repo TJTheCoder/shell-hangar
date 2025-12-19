@@ -66,6 +66,8 @@ const DEFAULT_STATS: Stats = {
   cha: 8,
 };
 
+const MAX_GENERATION = 99;
+
 const fmtSigned = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
 const abilityMod = (score: number) => Math.floor((score - 10) / 2);
 
@@ -209,10 +211,33 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const setStat = (key: AbilityKey, value: number) => {
-    setStats((prev) => ({
-      ...prev,
-      [key]: clamp(value, 8, 30),
-    }));
+    setStats((prev) => {
+      const nextValue = clamp(value, 8, 30);
+
+      // current invested total
+      const investedTotal =
+        Math.max(0, prev.str - 8) +
+        Math.max(0, prev.dex - 8) +
+        Math.max(0, prev.con - 8) +
+        Math.max(0, prev.int - 8) +
+        Math.max(0, prev.wis - 8) +
+        Math.max(0, prev.cha - 8);
+
+      const currentInvested = Math.max(0, prev[key] - 8);
+      const nextInvested = Math.max(0, nextValue - 8);
+
+      const nextTotal = investedTotal - currentInvested + nextInvested;
+
+      // hard stop: do not allow exceeding cap
+      if (nextTotal > MAX_GENERATION) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [key]: nextValue,
+      };
+    });
   };
 
   const toggleSaveProf = (key: AbilityKey) => {
