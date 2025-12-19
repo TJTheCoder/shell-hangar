@@ -32,7 +32,7 @@ export const SYSTEMS: SystemDef[] = [
   {
     id: "assault-rifle",
     name: "Assault Rifle",
-    cost: 1,
+    cost: 2,
     tags: ["AP: 1", "Minimum: 12", "Medium"],
     description:
       "A standard and reliable shell-class AR; 6d6 piercing w/ 100 ft. range.",
@@ -42,7 +42,7 @@ export const SYSTEMS: SystemDef[] = [
   {
     id: "tranquilizer-rifle",
     name: "Tranquilizer Rifle",
-    cost: 1,
+    cost: 3,
     tags: ["AP: 1", "Complexity: 1", "Heavy", "Accurate", "Artillery", "Bypasses Resistance"],
     description:
       "A rifle equipped with potent, sedative darts; 12d6 poison w/ 200 ft. range. Creatures reduced to 0 hit points by this are knocked out instead of killed.",
