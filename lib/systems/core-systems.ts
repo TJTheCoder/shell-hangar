@@ -24,4 +24,10 @@ export const CORE_SYSTEMS: CoreSystemDef[] = [
     description:
       "You are Invisible.",
   },
+  {
+    id: "momentary-warp-engine",
+    name: "Momentary Warp Engine",
+    description:
+      "You teleport when you move and can split up movement into multiple teleports. You can try to teleport to places you can't see, but you take an instability and lose the spent movement if the space is not empty.",
+  },
 ];
