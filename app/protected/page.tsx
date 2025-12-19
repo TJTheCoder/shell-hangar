@@ -1,15 +1,18 @@
 // app/protected/page.tsx
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { unstable_noStore as noStore } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { ShellCharacterCreator } from "@/components/shell-character-creator";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+function ProtectedFallback() {
+  return (
+    <div className="p-6 text-sm text-muted-foreground">
+      Loading shell…
+    </div>
+  );
+}
 
-export default async function ProtectedPage() {
-  noStore(); // extra safety: tells Next this route is always request-time
-
+async function ProtectedContent() {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
 
@@ -20,5 +23,13 @@ export default async function ProtectedPage() {
     <div className="flex-1 w-full">
       <ShellCharacterCreator userId={userId} />
     </div>
+  );
+}
+
+export default function ProtectedPage() {
+  return (
+    <Suspense fallback={<ProtectedFallback />}>
+      <ProtectedContent />
+    </Suspense>
   );
 }
