@@ -1195,7 +1195,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         <div className="absolute inset-0 opacity-[0.18] [background-image:linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:52px_52px]" />
       </div>
 
-      <div className="relative mx-auto w-full max-w-5xl px-4 pt-8 pb-[calc(env(safe-area-inset-bottom))]">
+      <div className="relative mx-auto w-full max-w-5xl px-4 pt-0 pb-[calc(env(safe-area-inset-bottom))]">
         {/* Header */}
         <div className="sticky top-0 z-20 -mx-4 mb-6 border-b bg-background/70 px-4 py-4 backdrop-blur">
           <div className="flex items-start justify-between gap-4">
