@@ -129,7 +129,7 @@ export default function Home() {
                 <h2 className="text-base font-semibold">Shell Builder</h2>
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
-                Assemble shells from the ground-up, choosing stats, frame specs, and systems.
+                Assemble shells from the ground-up and choose from catalogues of options.
               </p>
             </div>
 
@@ -139,7 +139,7 @@ export default function Home() {
                 <h2 className="text-base font-semibold">Combat Tracker</h2>
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
-                Keep track of disabilities and instability timers on a turn-by-turn basis.
+                Keep track of what actions you can take and durations on a turn-by-turn basis.
               </p>
             </div>
 
