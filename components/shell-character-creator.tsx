@@ -9,7 +9,20 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 
-import { Play, FastForward } from "lucide-react";
+import {
+  Play,
+  FastForward,
+  Dices,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldX,
+} from "lucide-react";
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import { SYSTEMS, type SystemSlot } from "@/lib/systems/systems";
 import { SystemCatalogueModal } from "@/components/system-catalogue-modal";
@@ -19,6 +32,8 @@ import { FRAME_SPECS } from "@/lib/frame-specs/frame-specs";
 import { CoreSystemModal } from "@/components/core-system-modal";
 import { FrameSpecsModal } from "@/components/frame-specs-modal";
 import { CombatSection } from "@/components/combat-section";
+
+/* ---------------- Types ---------------- */
 
 type Stats = {
   str: number;
@@ -45,6 +60,10 @@ type InstalledSystem = {
 type StructureKey = SystemSlot | "core";
 type StructureState = Record<StructureKey, SystemCondition>;
 
+type RollMode = "normal" | "adv" | "dis";
+
+/* ---------------- Constants ---------------- */
+
 const STAT_DEFS: Array<{ key: AbilityKey; label: string; short: string }> = [
   { key: "str", label: "Strength", short: "STR" },
   { key: "dex", label: "Dexterity", short: "DEX" },
@@ -53,9 +72,6 @@ const STAT_DEFS: Array<{ key: AbilityKey; label: string; short: string }> = [
   { key: "wis", label: "Wisdom", short: "WIS" },
   { key: "cha", label: "Charisma", short: "CHA" },
 ];
-
-const clamp = (n: number, min: number, max: number) =>
-  Math.max(min, Math.min(max, n));
 
 const DEFAULT_STATS: Stats = {
   str: 8,
@@ -68,9 +84,6 @@ const DEFAULT_STATS: Stats = {
 
 const MAX_GENERATION = 99;
 
-const fmtSigned = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
-const abilityMod = (score: number) => Math.floor((score - 10) / 2);
-
 const PROF_BONUS = 6;
 const PER_SLOT_CAP = 6;
 
@@ -81,6 +94,14 @@ const SLOT_LABELS: Record<SystemSlot, string> = {
   legs: "Legs",
   back: "Back",
 };
+
+/* ---------------- Utils ---------------- */
+
+const clamp = (n: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, n));
+
+const fmtSigned = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
+const abilityMod = (score: number) => Math.floor((score - 10) / 2);
 
 function isSystemSlot(x: unknown): x is SystemSlot {
   return (
@@ -133,8 +154,6 @@ function pickRandom<T>(arr: T[]) {
   return arr[idx];
 }
 
-type RollMode = "normal" | "adv" | "dis";
-
 function decrementDisabled(cond: SystemCondition): SystemCondition {
   if (cond.state === "destroyed") return cond;
   if (cond.state === "disabled") {
@@ -155,12 +174,164 @@ function hasAnyDisabled(installed: InstalledSystem[], structures: StructureState
   return sysHas || structHas;
 }
 
+/**
+ * Parses expressions like:
+ * - "d20"
+ * - "2d6+3"
+ * - "12d6 + 18"
+ * - "2d6+1d4+3" (supported)
+ */
+function parseDiceExpression(expr: string): {
+  ok: boolean;
+  normalized: string;
+  terms?: Array<
+    | { kind: "dice"; count: number; sides: number; sign: 1 | -1 }
+    | { kind: "flat"; value: number; sign: 1 | -1 }
+  >;
+  error?: string;
+} {
+  const raw = (expr ?? "").trim();
+  if (!raw) return { ok: false, normalized: "", error: "Enter a roll." };
+
+  const s = raw.replace(/\s+/g, "").toLowerCase();
+
+  // Tokenize by leading sign then term
+  // Term is either:
+  //  - NdM or dM
+  //  - integer
+  const re = /([+-]?)(\d*d\d+|\d+)/g;
+  let m: RegExpExecArray | null;
+
+  const terms: Array<
+    | { kind: "dice"; count: number; sides: number; sign: 1 | -1 }
+    | { kind: "flat"; value: number; sign: 1 | -1 }
+  > = [];
+
+  let consumed = 0;
+
+  while ((m = re.exec(s))) {
+    const full = m[0];
+    const signStr = m[1] ?? "";
+    const termStr = m[2] ?? "";
+
+    // Ensure contiguous coverage (reject stray characters)
+    if (m.index !== consumed) {
+      return {
+        ok: false,
+        normalized: s,
+        error: "Invalid roll format.",
+      };
+    }
+    consumed += full.length;
+
+    const sign: 1 | -1 = signStr === "-" ? -1 : 1;
+
+    if (termStr.includes("d")) {
+      const parts = termStr.split("d");
+      const countStr = parts[0];
+      const sidesStr = parts[1];
+
+      const count = countStr === "" ? 1 : Number(countStr);
+      const sides = Number(sidesStr);
+
+      if (!Number.isFinite(count) || count <= 0 || count > 999) {
+        return { ok: false, normalized: s, error: "Invalid dice count." };
+      }
+      if (!Number.isFinite(sides) || sides < 2 || sides > 100000) {
+        return { ok: false, normalized: s, error: "Invalid die sides." };
+      }
+
+      terms.push({
+        kind: "dice",
+        count: Math.trunc(count),
+        sides: Math.trunc(sides),
+        sign,
+      });
+    } else {
+      const v = Number(termStr);
+      if (!Number.isFinite(v)) {
+        return { ok: false, normalized: s, error: "Invalid modifier." };
+      }
+      terms.push({ kind: "flat", value: Math.trunc(Math.abs(v)), sign });
+    }
+  }
+
+  if (consumed !== s.length) {
+    return { ok: false, normalized: s, error: "Invalid roll format." };
+  }
+
+  // Normalize
+  const normalized = terms
+    .map((t, i) => {
+      const sign = t.sign === -1 ? "-" : i === 0 ? "" : "+";
+      if (t.kind === "flat") return `${sign}${t.value}`;
+      return `${sign}${t.count}d${t.sides}`;
+    })
+    .join("");
+
+  return { ok: true, normalized, terms };
+}
+
+function rollDiceExpression(expr: string): {
+  ok: boolean;
+  normalized?: string;
+  total?: number;
+  breakdown?: string;
+  error?: string;
+} {
+  const parsed = parseDiceExpression(expr);
+  if (!parsed.ok || !parsed.terms) return { ok: false, error: parsed.error ?? "Invalid roll." };
+
+  // Safety rails
+  const totalDice = parsed.terms
+    .filter((t) => t.kind === "dice")
+    .reduce((sum, t) => sum + (t.kind === "dice" ? t.count : 0), 0);
+
+  if (totalDice > 5000) {
+    return { ok: false, error: "Too many dice." };
+  }
+
+  let total = 0;
+  const lines: string[] = [];
+
+  for (const t of parsed.terms) {
+    if (t.kind === "flat") {
+      total += t.sign * t.value;
+      lines.push(`${t.sign === -1 ? "−" : "+"}${t.value}`);
+      continue;
+    }
+
+    const rolls: number[] = [];
+    for (let i = 0; i < t.count; i++) {
+      const r = Math.floor(Math.random() * t.sides) + 1;
+      rolls.push(r);
+    }
+    const subtotal = rolls.reduce((a, b) => a + b, 0);
+    total += t.sign * subtotal;
+
+    const rollList =
+      rolls.length <= 30 ? `[${rolls.join(", ")}]` : `[${rolls.slice(0, 30).join(", ")}, …]`;
+
+    lines.push(
+      `${t.sign === -1 ? "−" : "+"}${t.count}d${t.sides} ${rollList} = ${subtotal}`,
+    );
+  }
+
+  // Pretty breakdown without a leading "+"
+  const breakdown = lines
+    .join("\n")
+    .replace(/^\+/, "");
+
+  return { ok: true, normalized: parsed.normalized, total, breakdown };
+}
+
+/* ---------------- Main ---------------- */
+
 export function ShellCharacterCreator({ userId }: { userId: string }) {
   const supabase = useMemo(() => createClient(), []);
 
   const [shellName, setShellName] = useState("");
   const [stats, setStats] = useState<Stats>(DEFAULT_STATS);
-
   const [saveProfs, setSaveProfs] = useState<AbilityKey[]>([]);
 
   const [coreSystemId, setCoreSystemId] = useState<string | null>(null);
@@ -169,9 +340,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const [frameSpecIds, setFrameSpecIds] = useState<string[]>([]);
   const [frameSpecsOpen, setFrameSpecsOpen] = useState(false);
 
-  const [installedSystems, setInstalledSystems] = useState<InstalledSystem[]>(
-    [],
-  );
+  const [installedSystems, setInstalledSystems] = useState<InstalledSystem[]>([]);
 
   const [structureState, setStructureState] = useState<StructureState>({
     hull: { state: "ok" },
@@ -202,7 +371,18 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const [pendingInstability, setPendingInstability] =
     useState<StructureKey | null>(null);
 
-  const [sparesCurrent, setSparesCurrent] = useState<number | null>(null);
+  // Spares: track USED internally (persisted as available for DB compatibility)
+  const [sparesUsed, setSparesUsed] = useState<number | null>(null);
+
+  // Dice roller: complex expressions
+  const [rollExpr, setRollExpr] = useState("d20");
+  const [lastRoll, setLastRoll] = useState<{
+    expr: string;
+    normalized: string;
+    total: number;
+    breakdown: string;
+  } | null>(null);
+  const [rollError, setRollError] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -210,11 +390,12 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
+  /* ---------------- Attribute edits (with generation cap) ---------------- */
+
   const setStat = (key: AbilityKey, value: number) => {
     setStats((prev) => {
       const nextValue = clamp(value, 8, 30);
 
-      // current invested total
       const investedTotal =
         Math.max(0, prev.str - 8) +
         Math.max(0, prev.dex - 8) +
@@ -228,15 +409,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
       const nextTotal = investedTotal - currentInvested + nextInvested;
 
-      // hard stop: do not allow exceeding cap
-      if (nextTotal > MAX_GENERATION) {
-        return prev;
-      }
+      if (nextTotal > MAX_GENERATION) return prev;
 
-      return {
-        ...prev,
-        [key]: nextValue,
-      };
+      return { ...prev, [key]: nextValue };
     });
   };
 
@@ -256,7 +431,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     });
   };
 
-  // ---------- Derived values ----------
+  /* ---------------- Derived values ---------------- */
+
   const invested = {
     str: Math.max(0, stats.str - 8),
     dex: Math.max(0, stats.dex - 8),
@@ -290,8 +466,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
   const bufferSizeBonus = internal;
   const bufferDurationBonus = Math.floor(internal / 2);
-
-  // Buffer Duration base is 1 (min 1)
   const bufferDuration = Math.max(1, 1 + bufferDurationBonus);
 
   const baseDamageThreshold = 16;
@@ -310,21 +484,26 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const saveDC = baseSaveDC + saveDCBonus;
   const forwardSaveBonus = saveDC - 10;
 
+  // Spares (USED internally => Available derived)
+  const sparesUsedValue = useMemo(() => {
+    const u = sparesUsed ?? 0;
+    return clamp(u, 0, sparesMax);
+  }, [sparesUsed, sparesMax]);
+
+  const sparesAvailable = Math.max(0, sparesMax - sparesUsedValue);
+  const sparesPct = sparesMax <= 0 ? 0 : (sparesAvailable / sparesMax) * 100;
+
   useEffect(() => {
-    setSparesCurrent((prev) => {
-      if (prev === null || prev === undefined) return sparesMax;
-      return clamp(prev, 0, sparesMax);
+    setSparesUsed((prev) => {
+      const u = prev ?? 0;
+      return clamp(u, 0, sparesMax);
     });
   }, [sparesMax]);
 
-  const incSpares = () =>
-    setSparesCurrent((prev) =>
-      prev === null ? sparesMax : clamp(prev + 1, 0, sparesMax),
-    );
-  const decSpares = () =>
-    setSparesCurrent((prev) =>
-      prev === null ? 0 : clamp(prev - 1, 0, sparesMax),
-    );
+  const useOneSpare = () =>
+    setSparesUsed((prev) => clamp((prev ?? 0) + 1, 0, sparesMax));
+  const restoreOneSpare = () =>
+    setSparesUsed((prev) => clamp((prev ?? 0) - 1, 0, sparesMax));
 
   const saveBonus = (key: AbilityKey) =>
     abilityMod(stats[key]) + (saveProfs.includes(key) ? PROF_BONUS : 0);
@@ -333,12 +512,12 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
   const TOTAL_CAP = 19 + systemCapacityBonus;
 
-  // If Buffer Size shrinks, trim buffer
+  /* ---------------- Buffer behavior ---------------- */
+
   useEffect(() => {
     setInstabilityBuffer((prev) => prev.slice(0, Math.max(0, bufferSizeBonus)));
   }, [bufferSizeBonus]);
 
-  // Instability buffer controls
   const filledCount = instabilityBuffer.length;
   const canFill = bufferSizeBonus >= 1 && filledCount < bufferSizeBonus;
   const canUnfill = bufferSizeBonus >= 1 && filledCount > 0;
@@ -353,7 +532,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     setInstabilityBuffer((prev) => prev.slice(1));
   };
 
-  // Systems cost helpers
+  /* ---------------- Systems cost helpers ---------------- */
+
   const systemCostById = useMemo(() => {
     const map = new Map<string, number>();
     for (const s of SYSTEMS) map.set(s.id, s.cost);
@@ -420,24 +600,19 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       .map((s) => s!);
   }, [frameSpecIds]);
 
-  // Frame Specs can also provide combat actions via tags like "AP: 1", "Reaction", etc.
   const combatFrameSpecSystems = useMemo(() => {
     const defs = new Map(FRAME_SPECS.map((s) => [s.id, s]));
-
     return frameSpecIds
       .map((id) => defs.get(id))
       .filter(Boolean)
       .map((spec) => ({
-        // Use a stable pseudo-id so CombatSection can key actions consistently
         id: `frame-spec:${spec!.id}`,
         name: spec!.name,
         description: spec!.description ?? "",
         tags: sortedTags((spec as any).tags ?? []),
-        // Frame specs are not "disabled/destroyed" today; omit condition
       }));
   }, [frameSpecIds]);
 
-  // Provide CombatSection with installed systems in the shape it expects.
   const combatInstalledSystems = useMemo(() => {
     return installedSystems
       .map((inst) => {
@@ -462,7 +637,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     }>;
   }, [installedSystems]);
 
-  // ---------- Instability rolling ----------
+  /* ---------------- Instability rolling ---------------- */
+
   const getRollModeFor = (slot: StructureKey): RollMode => {
     if (slot === "core") return "dis";
     if (slot === "hull") {
@@ -524,7 +700,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       return;
     }
 
-    // Core: structure only, not core system
     if (slot === "core") {
       const cur = normalizeCondition(structureState.core);
 
@@ -634,7 +809,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     });
   };
 
-  // ---------- Load ----------
+  /* ---------------- Load ---------------- */
+
   useEffect(() => {
     let cancelled = false;
 
@@ -695,8 +871,15 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               slot: x?.slot,
               condition: normalizeCondition(x?.condition),
             }))
-            .filter((x: any) => typeof x.systemId === "string" && isSystemSlot(x.slot))
-            .map((x: any) => ({ systemId: x.systemId, slot: x.slot, condition: x.condition }));
+            .filter(
+              (x: any) =>
+                typeof x.systemId === "string" && isSystemSlot(x.slot),
+            )
+            .map((x: any) => ({
+              systemId: x.systemId,
+              slot: x.slot,
+              condition: x.condition,
+            }));
           setInstalledSystems(cleaned);
         } else {
           setInstalledSystems([]);
@@ -734,11 +917,14 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
           });
         }
 
+        // DB stores AVAILABLE spares; internal tracks USED
         const sc = (data as any).spares_current;
         if (Number.isFinite(Number(sc))) {
-          setSparesCurrent(Math.max(0, Math.trunc(Number(sc))));
+          const available = clamp(Math.trunc(Number(sc)), 0, sparesMax);
+          const used = sparesMax - available;
+          setSparesUsed(clamp(used, 0, sparesMax));
         } else {
-          setSparesCurrent(null);
+          setSparesUsed(null);
         }
       } else {
         setShellName("");
@@ -756,7 +942,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
           back: { state: "ok" },
           core: { state: "ok" },
         });
-        setSparesCurrent(null);
+        setSparesUsed(null);
       }
 
       setLoading(false);
@@ -767,14 +953,16 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase, userId]);
 
-  // ---------- Save (full payload) ----------
+  /* ---------------- Save ---------------- */
+
   const saveWithOverrides = async (overrides?: Partial<{
     installed_systems: InstalledSystem[];
     structure_state: StructureState;
     instability_buffer: number[];
-    spares_current: number;
+    spares_used: number;
   }>) => {
     setSaving(true);
     setError(null);
@@ -782,8 +970,18 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
     const normalizedBuffer =
       bufferSizeBonus >= 1
-        ? (overrides?.instability_buffer ?? instabilityBuffer).slice(0, bufferSizeBonus)
+        ? (overrides?.instability_buffer ?? instabilityBuffer).slice(
+            0,
+            bufferSizeBonus,
+          )
         : [];
+
+    const usedForSave = clamp(
+      overrides?.spares_used ?? (sparesUsed ?? 0),
+      0,
+      sparesMax,
+    );
+    const availableForSave = Math.max(0, sparesMax - usedForSave);
 
     const payload = {
       user_id: userId,
@@ -799,9 +997,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       structure_state: overrides?.structure_state ?? structureState,
       instability_buffer: normalizedBuffer,
 
-      spares_current:
-        overrides?.spares_current ??
-        (sparesCurrent === null ? sparesMax : clamp(sparesCurrent, 0, sparesMax)),
+      spares_current: availableForSave,
 
       updated_at: new Date().toISOString(),
     };
@@ -810,14 +1006,15 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       onConflict: "user_id",
     });
 
-    if (error) {
-      setError(error.message);
-    } else {
-      setSavedAt(new Date().toLocaleString());
-    }
+    if (error) setError(error.message);
+    else setSavedAt(new Date().toLocaleString());
 
     setSaving(false);
   };
+
+  const save = async () => saveWithOverrides();
+
+  /* ---------------- System usage ---------------- */
 
   const useSystemById = async (systemId: string, turns?: number) => {
     const def = SYSTEMS.find((s) => s.id === systemId);
@@ -834,7 +1031,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         cur.state === "disabled" ? Math.max(cur.count, inferred) : inferred;
 
       const nextCond: SystemCondition = { state: "disabled", count: nextCount };
-
       return { ...s, condition: nextCond };
     });
 
@@ -842,9 +1038,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     await saveWithOverrides({ installed_systems: next });
   };
 
-  const save = async () => saveWithOverrides();
+  /* ---------------- Turn progression ---------------- */
 
-  // ---------- Turn progression ----------
   const tickOnce = (
     sys: InstalledSystem[],
     struct: StructureState,
@@ -935,73 +1130,102 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       instability_buffer: curBuffer,
     });
 
-    if (totalExpired > 0) {
-      setBufferCriticalPopup({ open: true, y: totalExpired });
-    }
+    if (totalExpired > 0) setBufferCriticalPopup({ open: true, y: totalExpired });
 
     setAdvancing(false);
   };
 
-  // Instability Buffer UI behavior
-  const showInstabilityBuffer = bufferSizeBonus >= 1;
-  const instabilityCompact = filledCount === 0;
+  /* ---------------- Dice roller ---------------- */
 
-  // Core instability allowed ONLY when Hull destroyed
+  const doRoll = (expr: string) => {
+    const r = rollDiceExpression(expr);
+    if (!r.ok || r.total === undefined || !r.breakdown || !r.normalized) {
+      setRollError(r.error ?? "Invalid roll.");
+      return;
+    }
+    setRollError(null);
+    setLastRoll({
+      expr: expr.trim(),
+      normalized: r.normalized,
+      total: r.total,
+      breakdown: r.breakdown,
+    });
+  };
+
+  /* ---------------- UI toggles ---------------- */
+
+  const showInstabilityBuffer = bufferSizeBonus >= 1;
+  const instabilityCompact = instabilityBuffer.length === 0;
+
   const hullDestroyed = structureState.hull.state === "destroyed";
   const coreInstabilityEnabled = hullDestroyed;
 
-  return (
-    <div className="flex w-full flex-col gap-6 pb-28">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Shell Configuration</h1>
-          <p className="text-sm text-muted-foreground">
-            Configure attributes, frame specs, systems, and instabilities.
-          </p>
-        </div>
+  /* ---------------- Render ---------------- */
 
-        <div className="flex items-center gap-3">
-          <Button onClick={save} disabled={loading || saving || advancing}>
-            {saving ? "Saving..." : "Save"}
-          </Button>
-        </div>
+  return (
+    <div className="relative min-h-screen w-full overflow-hidden">
+      {/* Shell-themed background */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-24 left-1/2 h-[28rem] w-[60rem] -translate-x-1/2 rounded-full bg-gradient-to-r from-cyan-500/18 via-fuchsia-500/12 to-indigo-500/18 blur-3xl" />
+        <div className="absolute -bottom-32 right-[-10rem] h-[26rem] w-[26rem] rounded-full bg-gradient-to-br from-amber-500/12 via-rose-500/10 to-fuchsia-500/10 blur-3xl" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.06),transparent_58%)] dark:bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.05),transparent_58%)]" />
+        <div className="absolute inset-0 opacity-[0.18] [background-image:linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:52px_52px]" />
       </div>
 
-      {error && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
-          {error}
+      <div className="relative mx-auto w-full max-w-5xl px-4 pb-44 pt-8">
+        {/* Header */}
+        <div className="sticky top-0 z-20 -mx-4 mb-6 border-b bg-background/70 px-4 py-4 backdrop-blur">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="inline-flex items-center gap-2 rounded-full border bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">
+                <span className="inline-block h-2 w-2 rounded-full bg-cyan-400/80" />
+                Hangar Console
+              </div>
+              <h1 className="mt-3 truncate text-2xl font-semibold tracking-tight">
+                Shell Configuration
+              </h1>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Button onClick={save} disabled={loading || saving || advancing}>
+                {saving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+              {error}
+            </div>
+          )}
+
+          {savedAt && (
+            <div className="mt-4 rounded-md border bg-card/60 p-3 text-sm text-muted-foreground">
+              Saved: {savedAt}
+            </div>
+          )}
         </div>
-      )}
 
-      {savedAt && (
-        <div className="rounded-md border bg-card p-3 text-sm text-muted-foreground">
-          Saved: {savedAt}
-        </div>
-      )}
+        {/* Popups */}
+        {instabilityPopup.open && (
+          <Modal
+            title={instabilityPopup.title}
+            body={instabilityPopup.body}
+            onClose={() => setInstabilityPopup({ open: false, title: "", body: "" })}
+          />
+        )}
 
-      {instabilityPopup.open && (
-        <Modal
-          title={instabilityPopup.title}
-          body={instabilityPopup.body}
-          onClose={() => setInstabilityPopup({ open: false, title: "", body: "" })}
-        />
-      )}
+        {bufferCriticalPopup.open && (
+          <Modal
+            title="CRITICAL WARNING!"
+            body={`${bufferCriticalPopup.y} instabilities are no longer able to be managed by the buffer and must be resolved immediately.`}
+            onClose={() => setBufferCriticalPopup({ open: false, y: 0 })}
+            emphasis
+          />
+        )}
 
-      {bufferCriticalPopup.open && (
-        <Modal
-          title="CRITICAL WARNING!"
-          body={`${bufferCriticalPopup.y} instabilities are no longer able to be managed by the buffer and must be resolved immediately.`}
-          onClose={() => setBufferCriticalPopup({ open: false, y: 0 })}
-          emphasis
-        />
-      )}
-
-      {/* Shell Name */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Shell Name</CardTitle>
-        </CardHeader>
-        <CardContent>
+        {/* Shell Name */}
+        <ShellCard title="Shell Name">
           <div className="grid gap-2">
             <Label htmlFor="shellName">Designation</Label>
             <Input
@@ -1011,46 +1235,55 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               onChange={(e) => setShellName(e.target.value)}
               disabled={loading}
               maxLength={64}
+              className="bg-background/40"
             />
           </div>
-        </CardContent>
-      </Card>
+        </ShellCard>
 
-      {/* Generation */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Generation</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-3">
-            <div className="flex items-baseline justify-between">
-              <div className="text-sm text-muted-foreground">
-                Total invested points (above 8)
+        {/* Generation */}
+        <ShellCard title="Generation">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="text-sm text-muted-foreground">Total invested points</div>
+              <div className="text-3xl font-semibold tabular-nums">
+                {generation}
+                <span className="text-sm font-medium text-muted-foreground">
+                  /{MAX_GENERATION}
+                </span>
               </div>
-              <div className="text-3xl font-semibold tabular-nums">{generation}</div>
+            </div>
+
+            <div className="h-2 w-full overflow-hidden rounded-full border bg-background/30">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-cyan-400/70 via-indigo-400/60 to-fuchsia-400/60"
+                style={{ width: `${clamp((generation / MAX_GENERATION) * 100, 0, 100)}%` }}
+              />
             </div>
 
             <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
               {STAT_DEFS.map(({ key, short }) => (
-                <div key={key} className="rounded-lg border bg-background/20 px-3 py-2">
+                <div
+                  key={key}
+                  className="rounded-xl border bg-background/20 px-3 py-2 backdrop-blur"
+                >
                   <div className="text-xs text-muted-foreground">{short}</div>
-                  <div className="mt-1 font-medium tabular-nums">{fmtSigned(invested[key])}</div>
+                  <div className="mt-1 font-medium tabular-nums">
+                    {fmtSigned(invested[key])}
+                  </div>
                 </div>
               ))}
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </ShellCard>
 
-      {/* Attributes */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Attributes</CardTitle>
-        </CardHeader>
-        <CardContent>
+        {/* Attributes */}
+        <ShellCard title="Attributes">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {STAT_DEFS.map(({ key, label }) => (
-              <div key={key} className="rounded-lg border bg-background/20 p-4">
+              <div
+                key={key}
+                className="rounded-2xl border bg-background/20 p-4 backdrop-blur transition hover:bg-background/25"
+              >
                 <div className="flex items-center justify-between gap-3">
                   <Label className="text-sm font-medium">{label}</Label>
                   <Input
@@ -1059,7 +1292,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                     min={8}
                     max={30}
                     step={1}
-                    className="w-24 text-right tabular-nums"
+                    className="w-24 text-right tabular-nums bg-background/40"
                     value={stats[key]}
                     disabled={loading}
                     onChange={(e) => {
@@ -1069,42 +1302,36 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                     onBlur={() => setStat(key, stats[key])}
                   />
                 </div>
-                <div className="mt-2 text-xs text-muted-foreground">
-                  Min 8 · Max 30 · Default 8
+
+                <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                  <span className="font-mono">{shortMod(stats[key])}</span>
+                  <span className="font-mono">{fmtSigned(abilityMod(stats[key]))}</span>
                 </div>
               </div>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        </ShellCard>
 
-      {/* Derived Attributes */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Derived Attributes</CardTitle>
-        </CardHeader>
-        <CardContent>
+        {/* Derived Attributes */}
+        <ShellCard title="Derived Attributes">
           <div className="grid gap-4 lg:grid-cols-2">
             <AuxCard
               title="Fort"
               value={fort}
-              contribution="Contrib: STR + CON + CHA (per 3)"
               bonuses={[
-                { label: "Damage Threshold Bonus", value: fmtSigned(damageThresholdBonus), detail: "+2 per Fort" },
-                { label: "Spares Bonus", value: fmtSigned(sparesBonus), detail: "+1 per 2 Fort" },
+                { label: "Damage Threshold Bonus", value: fmtSigned(damageThresholdBonus) },
+                { label: "Spares Bonus", value: fmtSigned(sparesBonus) },
               ]}
             />
 
             <AuxCard
               title="Agility"
               value={agility}
-              contribution="Contrib: 2×DEX + WIS (per 3)"
               bonuses={[
-                { label: "Armor Class Bonus", value: fmtSigned(armorClassBonus), detail: "+1 per Agility" },
+                { label: "Armor Class Bonus", value: fmtSigned(armorClassBonus) },
                 {
                   label: "Movement Speed Bonus",
                   value: moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`,
-                  detail: "+10 ft per 2 Agility",
                 },
               ]}
             />
@@ -1112,68 +1339,68 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             <AuxCard
               title="Techno"
               value={techno}
-              contribution="Contrib: INT + WIS + CHA (per 3)"
               bonuses={[
-                { label: "Save DC Bonus", value: fmtSigned(saveDCBonus), detail: "+1 per Techno" },
-                { label: "System Capacity Bonus", value: fmtSigned(systemCapacityBonus), detail: "+1 per 2 Techno" },
+                { label: "Save DC Bonus", value: fmtSigned(saveDCBonus) },
+                { label: "System Capacity Bonus", value: fmtSigned(systemCapacityBonus) },
               ]}
             />
 
             <AuxCard
               title="Internal"
               value={internal}
-              contribution="Contrib: STR + CON + INT (per 3)"
               bonuses={[
-                { label: "Buffer Size Bonus", value: fmtSigned(bufferSizeBonus), detail: "+1 per Internal" },
-                { label: "Buffer Duration Bonus", value: fmtSigned(bufferDurationBonus), detail: "+1 per 2 Internal" },
+                { label: "Buffer Size Bonus", value: fmtSigned(bufferSizeBonus) },
+                { label: "Buffer Duration Bonus", value: fmtSigned(bufferDurationBonus) },
               ]}
             />
           </div>
-        </CardContent>
-      </Card>
+        </ShellCard>
 
-      {/* Tactical Profile */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Tactical Profile</CardTitle>
-        </CardHeader>
-        <CardContent>
+        {/* Tactical Profile */}
+        <ShellCard title="Tactical Profile">
           <div className="grid gap-6 lg:grid-cols-2">
-            <div className="rounded-lg border bg-background/20 p-4">
+            <div className="rounded-2xl border bg-background/20 p-4 backdrop-blur">
               <div className="text-sm font-semibold">Vitals</div>
               <div className="mt-3 grid gap-2">
-                <Row
-                  label="Damage Threshold"
-                  value={`${damageThreshold} (${fmtSigned(damageThresholdBonus)})`}
-                />
+                <Row label="Damage Threshold" value={`${damageThreshold} (${fmtSigned(damageThresholdBonus)})`} />
+                <Row label="Double Damage Threshold" value={`${damageThreshold * 2}`} />
 
-                <Row
-                  label="Double Damage Threshold"
-                  value={`${damageThreshold * 2}`}
-                />
+                <div className="rounded-xl border bg-card/40 p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-medium">Spares</div>
+                    <div className="text-sm tabular-nums">
+                      <span className="font-semibold">{sparesAvailable}</span>/{sparesMax}
+                    </div>
+                  </div>
 
-                <div className="flex items-center justify-between rounded-md border bg-card/40 px-3 py-2">
-                  <div>Spares</div>
-                  <div className="flex items-center gap-2">
+                  <div className="mt-3 h-2 w-full overflow-hidden rounded-full border bg-background/30">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-emerald-400/70 via-cyan-400/55 to-indigo-400/55"
+                      style={{ width: `${clamp(sparesPct, 0, 100)}%` }}
+                    />
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between gap-2">
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={decSpares}
-                      disabled={loading || advancing || (sparesCurrent ?? sparesMax) <= 0}
+                      onClick={useOneSpare}
+                      disabled={loading || advancing || sparesAvailable <= 0}
+                      className="h-8"
                     >
                       −
                     </Button>
-                    <div className="font-medium tabular-nums">
-                      {clamp(sparesCurrent ?? sparesMax, 0, sparesMax)}/{sparesMax}{" "}
-                      <span className="text-xs text-muted-foreground">
-                        ({fmtSigned(sparesBonus)})
-                      </span>
+
+                    <div className="text-xs text-muted-foreground font-mono">
+                      {sparesUsedValue} used
                     </div>
+
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={incSpares}
-                      disabled={loading || advancing || (sparesCurrent ?? sparesMax) >= sparesMax}
+                      onClick={restoreOneSpare}
+                      disabled={loading || advancing || sparesUsedValue <= 0}
+                      className="h-8"
                     >
                       +
                     </Button>
@@ -1204,17 +1431,14 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
               <div className="mt-6 text-sm font-semibold">Immunities</div>
               <div className="mt-3 grid gap-2">
-                <div className="rounded-md border bg-card/40 px-3 py-2 text-sm">
+                <div className="rounded-xl border bg-card/40 px-3 py-2 text-sm">
                   Poison, Charmed, Exhaustion, Frightened, Poisoned
                 </div>
               </div>
             </div>
 
-            <div className="rounded-lg border bg-background/20 p-4">
+            <div className="rounded-2xl border bg-background/20 p-4 backdrop-blur">
               <div className="text-sm font-semibold">Saving Throws</div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                Choose exactly two save proficiencies. Proficiency bonus is {fmtSigned(PROF_BONUS)}.
-              </div>
 
               <div className="mt-4 grid gap-2">
                 {STAT_DEFS.map(({ key, label, short }) => {
@@ -1226,7 +1450,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                   return (
                     <div
                       key={key}
-                      className="flex items-center justify-between rounded-md border bg-card/40 px-3 py-2"
+                      className="flex items-center justify-between rounded-xl border bg-card/40 px-3 py-2"
                     >
                       <div className="flex items-center gap-3">
                         <Checkbox
@@ -1237,10 +1461,14 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                         />
                         <label
                           htmlFor={`save-prof-${key}`}
-                          className={`cursor-pointer text-sm ${disableCheck ? "text-muted-foreground" : ""}`}
+                          className={`cursor-pointer text-sm ${
+                            disableCheck ? "text-muted-foreground" : ""
+                          }`}
                         >
                           {label}{" "}
-                          <span className="text-xs text-muted-foreground">({short})</span>
+                          <span className="text-xs text-muted-foreground">
+                            ({short})
+                          </span>
                         </label>
                       </div>
 
@@ -1257,11 +1485,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               </div>
 
               <div className="mt-6 text-sm font-semibold">Skills</div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                Shells are proficient in Athletics, Acrobatics, Perception, and Stealth. Proficiency bonus is{" "}
-                {fmtSigned(PROF_BONUS)}.
-              </div>
-
               <div className="mt-4 grid gap-2">
                 <Row label="Athletics (STR)" value={fmtSigned(skillBonus("str"))} />
                 <Row label="Acrobatics (DEX)" value={fmtSigned(skillBonus("dex"))} />
@@ -1270,41 +1493,44 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </ShellCard>
 
-      {/* Frame Specs */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Frame Specs</CardTitle>
-        </CardHeader>
-        <CardContent>
+        {/* Frame Specs */}
+        <ShellCard title="Frame Specs">
           <div className="grid gap-4">
-            <div className="flex flex-wrap items-start justify-between gap-3 rounded-md border bg-background/20 p-3">
-              <div>
-                <div className="text-sm font-semibold">Select 4 Frame Specs</div>
-              </div>
+            <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border bg-background/20 p-3 backdrop-blur">
+              <div className="text-sm font-semibold">Select 4 Frame Specs</div>
+
               <div className="flex items-center gap-3">
                 <div className="text-xs text-muted-foreground tabular-nums">
                   Selected: {frameSpecIds.length}/4
                 </div>
-                <Button variant="outline" onClick={() => setFrameSpecsOpen(true)} disabled={loading || advancing}>
+                <Button
+                  variant="outline"
+                  onClick={() => setFrameSpecsOpen(true)}
+                  disabled={loading || advancing}
+                >
                   Choose Specs
                 </Button>
               </div>
             </div>
 
-            <div className="rounded-lg border bg-background/20 p-4">
+            <div className="rounded-2xl border bg-background/20 p-4 backdrop-blur">
               <div className="text-sm font-semibold">Selected</div>
               <div className="mt-2 grid gap-2">
                 {selectedFrameSpecs.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">No frame specs selected yet.</div>
+                  <div className="text-sm text-muted-foreground">
+                    No frame specs selected yet.
+                  </div>
                 ) : (
                   selectedFrameSpecs.map((s) => {
                     const tags = sortedTags((s as any).tags);
 
                     return (
-                      <div key={s.id} className="rounded-md border bg-card/40 px-3 py-2">
+                      <div
+                        key={s.id}
+                        className="rounded-2xl border bg-card/40 px-3 py-3 transition hover:bg-card/50"
+                      >
                         <div className="text-sm font-medium">{s.name}</div>
 
                         {tags.length > 0 && (
@@ -1312,7 +1538,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                             {tags.map((t) => (
                               <span
                                 key={t}
-                                className="rounded-md border bg-background/40 px-2 py-0.5 text-xs"
+                                className="rounded-full border bg-background/40 px-2.5 py-1 text-[11px] font-medium"
                               >
                                 {t}
                               </span>
@@ -1320,40 +1546,28 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                           </div>
                         )}
 
-                        <div className="mt-1 text-xs text-muted-foreground">{s.description}</div>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          {s.description}
+                        </div>
                       </div>
                     );
                   })
                 )}
               </div>
             </div>
-
-            <FrameSpecsModal
-              open={frameSpecsOpen}
-              onClose={() => setFrameSpecsOpen(false)}
-              specs={FRAME_SPECS}
-              selectedIds={frameSpecIds}
-              maxSelected={4}
-              onToggle={toggleFrameSpec}
-            />
           </div>
-        </CardContent>
-      </Card>
+        </ShellCard>
 
-      {/* Systems */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Systems</CardTitle>
-        </CardHeader>
-        <CardContent>
+        {/* Systems */}
+        <ShellCard title="Systems">
           <div className="grid gap-4">
-            <div className="rounded-md border bg-background/20 p-3">
+            <div className="rounded-2xl border bg-background/20 p-3 backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm text-muted-foreground">
                   Per-site cap: {PER_SLOT_CAP}. Total cap: {TOTAL_CAP}.
                 </div>
                 <div className="text-sm font-medium tabular-nums">
-                  Total Installed Cost: {getTotalCost()}/{TOTAL_CAP}
+                  {getTotalCost()}/{TOTAL_CAP}
                 </div>
               </div>
             </div>
@@ -1376,121 +1590,45 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                 onClick={() => setCoreModalOpen(true)}
               />
 
-              <SectionWithInstabilityConfirm
-                title="Hull"
-                slot="hull"
-                subtitle={`${getSlotCost("hull")}/${PER_SLOT_CAP}`}
-                condition={structureState.hull}
-                disabled={loading || advancing}
-                pending={pendingInstability === "hull"}
-                onStart={() => setPendingInstability("hull")}
-                onCancel={() => setPendingInstability(null)}
-                onConfirm={async () => {
-                  setPendingInstability(null);
-                  await rollInstability("hull");
-                }}
-                onRepair={() => repairStructure("hull")}
-                onClick={() => {
-                  setCatalogueDefaultSlot("hull");
-                  setCatalogueOpen(true);
-                }}
-              />
-
-              <SectionWithInstabilityConfirm
-                title="Left Arm"
-                slot="left_arm"
-                subtitle={`${getSlotCost("left_arm")}/${PER_SLOT_CAP}`}
-                condition={structureState.left_arm}
-                disabled={loading || advancing}
-                pending={pendingInstability === "left_arm"}
-                onStart={() => setPendingInstability("left_arm")}
-                onCancel={() => setPendingInstability(null)}
-                onConfirm={async () => {
-                  setPendingInstability(null);
-                  await rollInstability("left_arm");
-                }}
-                onRepair={() => repairStructure("left_arm")}
-                onClick={() => {
-                  setCatalogueDefaultSlot("left_arm");
-                  setCatalogueOpen(true);
-                }}
-              />
-
-              <SectionWithInstabilityConfirm
-                title="Right Arm"
-                slot="right_arm"
-                subtitle={`${getSlotCost("right_arm")}/${PER_SLOT_CAP}`}
-                condition={structureState.right_arm}
-                disabled={loading || advancing}
-                pending={pendingInstability === "right_arm"}
-                onStart={() => setPendingInstability("right_arm")}
-                onCancel={() => setPendingInstability(null)}
-                onConfirm={async () => {
-                  setPendingInstability(null);
-                  await rollInstability("right_arm");
-                }}
-                onRepair={() => repairStructure("right_arm")}
-                onClick={() => {
-                  setCatalogueDefaultSlot("right_arm");
-                  setCatalogueOpen(true);
-                }}
-              />
-
-              <SectionWithInstabilityConfirm
-                title="Legs"
-                slot="legs"
-                subtitle={`${getSlotCost("legs")}/${PER_SLOT_CAP}`}
-                condition={structureState.legs}
-                disabled={loading || advancing}
-                pending={pendingInstability === "legs"}
-                onStart={() => setPendingInstability("legs")}
-                onCancel={() => setPendingInstability(null)}
-                onConfirm={async () => {
-                  setPendingInstability(null);
-                  await rollInstability("legs");
-                }}
-                onRepair={() => repairStructure("legs")}
-                onClick={() => {
-                  setCatalogueDefaultSlot("legs");
-                  setCatalogueOpen(true);
-                }}
-              />
-
-              <SectionWithInstabilityConfirm
-                title="Back"
-                slot="back"
-                subtitle={`${getSlotCost("back")}/${PER_SLOT_CAP}`}
-                condition={structureState.back}
-                disabled={loading || advancing}
-                pending={pendingInstability === "back"}
-                onStart={() => setPendingInstability("back")}
-                onCancel={() => setPendingInstability(null)}
-                onConfirm={async () => {
-                  setPendingInstability(null);
-                  await rollInstability("back");
-                }}
-                onRepair={() => repairStructure("back")}
-                onClick={() => {
-                  setCatalogueDefaultSlot("back");
-                  setCatalogueOpen(true);
-                }}
-              />
+              {(
+                [
+                  ["Hull", "hull"],
+                  ["Left Arm", "left_arm"],
+                  ["Right Arm", "right_arm"],
+                  ["Legs", "legs"],
+                  ["Back", "back"],
+                ] as const
+              ).map(([label, slot]) => (
+                <SectionWithInstabilityConfirm
+                  key={slot}
+                  title={label}
+                  slot={slot}
+                  subtitle={`${getSlotCost(slot)}/${PER_SLOT_CAP}`}
+                  condition={structureState[slot]}
+                  disabled={loading || advancing}
+                  pending={pendingInstability === slot}
+                  onStart={() => setPendingInstability(slot)}
+                  onCancel={() => setPendingInstability(null)}
+                  onConfirm={async () => {
+                    setPendingInstability(null);
+                    await rollInstability(slot);
+                  }}
+                  onRepair={() => repairStructure(slot)}
+                  onClick={() => {
+                    setCatalogueDefaultSlot(slot);
+                    setCatalogueOpen(true);
+                  }}
+                />
+              ))}
             </div>
 
-            <CoreSystemModal
-              open={coreModalOpen}
-              onClose={() => setCoreModalOpen(false)}
-              coreSystems={CORE_SYSTEMS}
-              selectedCoreSystemId={coreSystemId}
-              onSelect={(id) => setCoreSystemId(id)}
-              onClear={() => setCoreSystemId(null)}
-            />
-
-            <div className="rounded-lg border bg-background/20 p-4">
+            <div className="rounded-2xl border bg-background/20 p-4 backdrop-blur">
               <div className="text-sm font-semibold">Installed Systems</div>
-              <div className="mt-2 grid gap-2">
+              <div className="mt-3 grid gap-2">
                 {installedSystems.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">No systems installed yet.</div>
+                  <div className="text-sm text-muted-foreground">
+                    No systems installed yet.
+                  </div>
                 ) : (
                   installedSystems.map((inst) => {
                     const def = SYSTEMS.find((s) => s.id === inst.systemId);
@@ -1503,14 +1641,12 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                     const status = conditionLabel(cond);
                     const muted = cond.state !== "ok";
                     const complexityTurns = parseComplexity(def?.tags);
-                    const canUseComplexity =
-                      complexityTurns > 0 && cond.state !== "destroyed";
 
                     return (
                       <div
                         key={`${inst.systemId}:${inst.slot}`}
                         className={[
-                          "rounded-md border bg-card/40 px-3 py-2",
+                          "rounded-2xl border bg-card/40 px-3 py-3 transition hover:bg-card/50",
                           muted ? "opacity-60" : "",
                         ].join(" ")}
                       >
@@ -1519,13 +1655,13 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                             <div className="flex flex-wrap items-center gap-2">
                               <div className="text-sm font-medium">{name}</div>
                               {status && (
-                                <span className="rounded-md border bg-background/40 px-2 py-0.5 text-xs font-medium">
+                                <span className="rounded-full border bg-background/40 px-2.5 py-1 text-[11px] font-medium">
                                   {status}
                                 </span>
                               )}
                             </div>
 
-                            <div className="text-xs text-muted-foreground">
+                            <div className="mt-1 text-xs text-muted-foreground">
                               Slot: {slotLabel} · Cost: {cost}
                             </div>
 
@@ -1534,7 +1670,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                                 {tags.map((t) => (
                                   <span
                                     key={t}
-                                    className="rounded-md border bg-background/40 px-2 py-0.5 text-xs"
+                                    className="rounded-full border bg-background/40 px-2.5 py-1 text-[11px]"
                                   >
                                     {t}
                                   </span>
@@ -1589,57 +1725,28 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                 )}
               </div>
             </div>
-
-            <SystemCatalogueModal
-              open={catalogueOpen}
-              onClose={() => setCatalogueOpen(false)}
-              systems={SYSTEMS}
-              defaultSlot={catalogueDefaultSlot}
-              installed={installedSystems as any}
-              perSlotCap={PER_SLOT_CAP}
-              totalCap={TOTAL_CAP}
-              getSystemCost={getSystemCost}
-              getSlotCost={getSlotCost}
-              getTotalCost={getTotalCost}
-              onInstall={(systemId: string, slot: SystemSlot) => installSystem(systemId, slot)}
-            />
           </div>
-        </CardContent>
-      </Card>
+        </ShellCard>
 
-      {/* Instability Buffer */}
-      {showInstabilityBuffer && (
-        <Card>
-          <CardHeader className={instabilityCompact ? "py-4" : undefined}>
-            <CardTitle>Instability Buffer</CardTitle>
-          </CardHeader>
-
-          <CardContent className={instabilityCompact ? "pt-0" : undefined}>
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background/20 p-3">
-              <div>
-                <div className="text-sm font-semibold">
-                  Buffer Size {bufferSizeBonus} · Buffer Duration {bufferDuration}
-                </div>
+        {/* Instability Buffer */}
+        {showInstabilityBuffer && (
+          <ShellCard title="Instability Buffer">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-background/20 p-3 backdrop-blur">
+              <div className="text-sm font-semibold">
+                {instabilityBuffer.length}/{bufferSizeBonus} · {bufferDuration}
               </div>
 
               <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={onUnfillOne}
-                  disabled={loading || advancing || !canUnfill}
-                >
+                <Button variant="outline" onClick={onUnfillOne} disabled={loading || advancing || !canUnfill}>
                   −
                 </Button>
-                <div className="text-sm tabular-nums">
-                  {filledCount}/{bufferSizeBonus}
-                </div>
                 <Button onClick={onFillOne} disabled={loading || advancing || !canFill}>
                   +
                 </Button>
               </div>
             </div>
 
-            {filledCount > 0 && (
+            {!instabilityCompact && (
               <div className="mt-4">
                 <HexGridRowByRow
                   capacity={bufferSizeBonus}
@@ -1648,52 +1755,189 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                 />
               </div>
             )}
-          </CardContent>
-        </Card>
-      )}
+          </ShellCard>
+        )}
 
-      {/* Combat */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Combat</CardTitle>
-        </CardHeader>
-        <CardContent>
+        {/* Combat */}
+        <ShellCard title="Combat">
           <CombatSection
             installedSystems={[...combatInstalledSystems, ...combatFrameSpecSystems]}
             onUseSystem={(id, turns) => useSystemById(id, turns)}
           />
-        </CardContent>
-      </Card>
+        </ShellCard>
+      </div>
 
-      {/* Bottom controls (very bottom) */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/80 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-end gap-3 p-3">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => advanceTurns("one")}
-            disabled={loading || saving || advancing}
-            title="Advance 1 turn"
-          >
-            <Play className="h-4 w-4" />
-          </Button>
+      {/* IMPORTANT: Render catalogue modals at the root so they behave like true full-screen overlays.
+          Also: ShellCard no longer uses overflow-hidden, so overlays won't be clipped. */}
+      <FrameSpecsModal
+        open={frameSpecsOpen}
+        onClose={() => setFrameSpecsOpen(false)}
+        specs={FRAME_SPECS}
+        selectedIds={frameSpecIds}
+        maxSelected={4}
+        onToggle={toggleFrameSpec}
+      />
 
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => advanceTurns("fast")}
-            disabled={loading || saving || advancing}
-            title="Fast-forward (stops if buffer expires)"
-          >
-            <FastForward className="h-4 w-4" />
-          </Button>
+      <CoreSystemModal
+        open={coreModalOpen}
+        onClose={() => setCoreModalOpen(false)}
+        coreSystems={CORE_SYSTEMS}
+        selectedCoreSystemId={coreSystemId}
+        onSelect={(id) => setCoreSystemId(id)}
+        onClear={() => setCoreSystemId(null)}
+      />
+
+      <SystemCatalogueModal
+        open={catalogueOpen}
+        onClose={() => setCatalogueOpen(false)}
+        systems={SYSTEMS}
+        defaultSlot={catalogueDefaultSlot}
+        installed={installedSystems as any}
+        perSlotCap={PER_SLOT_CAP}
+        totalCap={TOTAL_CAP}
+        getSystemCost={getSystemCost}
+        getSlotCost={getSlotCost}
+        getTotalCost={getTotalCost}
+        onInstall={(systemId: string, slot: SystemSlot) => installSystem(systemId, slot)}
+      />
+
+      {/* Bottom bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/70 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 p-3">
+          {/* Left: Dice roller */}
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" disabled={loading} title="Dice Roller">
+                  <Dices className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+
+              <DropdownMenuContent align="start" className="w-[320px] p-3">
+                <div className="text-sm font-semibold">Dice Roller</div>
+
+                <div className="mt-3 grid gap-2">
+                  <Input
+                    value={rollExpr}
+                    onChange={(e) => setRollExpr(e.target.value)}
+                    placeholder='e.g. "12d6+6"'
+                    className="bg-background/40 font-mono"
+                  />
+                  <div className="grid grid-cols-3 gap-2">
+                    {[4, 6, 8, 10, 12, 20].map((sides) => (
+                      <Button
+                        key={sides}
+                        variant="outline"
+                        className="h-9"
+                        onClick={() => {
+                          const next = `d${sides}`;
+                          setRollExpr(next);
+                          doRoll(next);
+                        }}
+                      >
+                        d{sides}
+                      </Button>
+                    ))}
+                    <Button
+                      className="h-9 col-span-3"
+                      onClick={() => doRoll(rollExpr)}
+                    >
+                      Roll
+                    </Button>
+                  </div>
+
+                  {rollError && (
+                    <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
+                      {rollError}
+                    </div>
+                  )}
+
+                  <div className="rounded-xl border bg-background/40 p-3">
+                    {lastRoll ? (
+                      <div className="grid gap-2">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-muted-foreground">Result</div>
+                          <div className="font-mono text-sm">
+                            <span className="text-muted-foreground">{lastRoll.normalized}</span>{" "}
+                            →{" "}
+                            <span className="font-semibold text-foreground">{lastRoll.total}</span>
+                          </div>
+                        </div>
+                        <div className="whitespace-pre-line font-mono text-xs text-muted-foreground">
+                          {lastRoll.breakdown}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground font-mono">
+                        Enter an expression and roll.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {lastRoll && (
+              <div className="hidden sm:flex items-center gap-2 rounded-full border bg-background/50 px-3 py-1 text-xs text-muted-foreground">
+                <span className="font-mono">{lastRoll.normalized}</span>
+                <span className="text-muted-foreground">→</span>
+                <span className="font-semibold text-foreground">{lastRoll.total}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Center: Turn controls */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => advanceTurns("one")}
+              disabled={loading || saving || advancing}
+              title="Advance 1 turn"
+            >
+              <Play className="h-4 w-4" />
+            </Button>
+
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => advanceTurns("fast")}
+              disabled={loading || saving || advancing}
+              title="Fast-forward (stops if buffer expires)"
+            >
+              <FastForward className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Right spacer for symmetry */}
+          <div className="w-[44px]" />
         </div>
       </div>
     </div>
   );
 }
 
-/* ---------- UI helpers ---------- */
+/* ---------------- Small UI helpers ---------------- */
+
+function shortMod(score: number) {
+  // purely cosmetic label for the attribute tile footer
+  const m = abilityMod(score);
+  return m >= 0 ? `mod +${m}` : `mod ${m}`;
+}
+
+function ShellCard(props: { title: string; children: React.ReactNode }) {
+  return (
+    <Card className="mb-6 border bg-card/60 shadow-xl shadow-black/5 backdrop-blur">
+      <div className="relative">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-cyan-400/60 via-indigo-400/40 to-fuchsia-400/50" />
+      </div>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">{props.title}</CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">{props.children}</CardContent>
+    </Card>
+  );
+}
 
 function Modal(props: {
   title: string;
@@ -1702,15 +1946,17 @@ function Modal(props: {
   emphasis?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-xl border bg-card p-4 shadow">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
+      <div className="relative w-full max-w-md rounded-2xl border bg-card/70 p-4 shadow-2xl backdrop-blur">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-red-500/60 via-fuchsia-500/40 to-indigo-500/60" />
         <div
           className={
             props.emphasis
-              ? "text-lg font-semibold text-destructive"
-              : "text-lg font-semibold"
+              ? "flex items-center gap-2 text-lg font-semibold text-destructive"
+              : "flex items-center gap-2 text-lg font-semibold"
           }
         >
+          {props.emphasis ? <ShieldAlert className="h-5 w-5" /> : null}
           {props.title}
         </div>
         <div className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
@@ -1726,8 +1972,8 @@ function Modal(props: {
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between rounded-md border bg-card/40 px-3 py-2">
-      <div>{label}</div>
+    <div className="flex items-center justify-between rounded-xl border bg-card/40 px-3 py-2">
+      <div className="text-sm">{label}</div>
       <div className="font-medium tabular-nums">{value}</div>
     </div>
   );
@@ -1736,18 +1982,12 @@ function Row({ label, value }: { label: string; value: string }) {
 function AuxCard(props: {
   title: string;
   value: number;
-  contribution: string;
-  bonuses: Array<{ label: string; value: string; detail: string }>;
+  bonuses: Array<{ label: string; value: string }>;
 }) {
   return (
-    <div className="rounded-lg border bg-background/20 p-4">
+    <div className="rounded-2xl border bg-background/20 p-4 backdrop-blur">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-base font-semibold">{props.title}</div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {props.contribution}
-          </div>
-        </div>
+        <div className="text-base font-semibold">{props.title}</div>
         <div className="text-2xl font-semibold tabular-nums">{props.value}</div>
       </div>
 
@@ -1755,12 +1995,9 @@ function AuxCard(props: {
         {props.bonuses.map((b) => (
           <div
             key={b.label}
-            className="flex items-start justify-between gap-3 rounded-md border bg-card/40 px-3 py-2"
+            className="flex items-center justify-between gap-3 rounded-xl border bg-card/40 px-3 py-2"
           >
-            <div>
-              <div className="text-sm font-medium">{b.label}</div>
-              <div className="text-xs text-muted-foreground">{b.detail}</div>
-            </div>
+            <div className="text-sm font-medium">{b.label}</div>
             <div className="font-semibold tabular-nums">{b.value}</div>
           </div>
         ))}
@@ -1768,6 +2005,8 @@ function AuxCard(props: {
     </div>
   );
 }
+
+/* ---------------- Slot cards ---------------- */
 
 function CoreSection(props: {
   title: string;
@@ -1789,8 +2028,17 @@ function CoreSection(props: {
   const showRepair =
     props.condition.state === "disabled" || props.condition.state === "destroyed";
 
+  const statusIcon =
+    props.condition.state === "destroyed" ? (
+      <ShieldX className="h-4 w-4 text-destructive" />
+    ) : props.condition.state === "disabled" ? (
+      <ShieldAlert className="h-4 w-4 text-amber-500" />
+    ) : (
+      <ShieldCheck className="h-4 w-4 text-emerald-500" />
+    );
+
   return (
-    <div className="relative rounded-lg border bg-background/20 px-4 py-3">
+    <div className="relative rounded-2xl border bg-background/20 px-4 py-3 backdrop-blur">
       <div className="flex items-start justify-between gap-3">
         <button
           type="button"
@@ -1798,20 +2046,19 @@ function CoreSection(props: {
           disabled={props.disabled}
           className={[
             "min-w-0 flex-1 text-left transition-colors",
-            props.disabled ? "cursor-not-allowed opacity-60" : "",
+            props.disabled ? "cursor-not-allowed opacity-60" : "hover:opacity-95",
           ].join(" ")}
         >
           <div className="flex flex-wrap items-center gap-2">
+            {statusIcon}
             <div className="text-sm font-semibold">{props.title}</div>
             {status && (
-              <span className="rounded-md border bg-background/40 px-2 py-0.5 text-xs font-medium">
+              <span className="rounded-full border bg-background/40 px-2.5 py-1 text-[11px] font-medium">
                 {status}
               </span>
             )}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {props.subtitle}
-          </div>
+          <div className="mt-1 text-xs text-muted-foreground">{props.subtitle}</div>
         </button>
 
         <div className="flex flex-col items-end gap-2">
@@ -1891,8 +2138,17 @@ function SectionWithInstabilityConfirm(props: {
   const showRepair =
     props.condition.state === "disabled" || props.condition.state === "destroyed";
 
+  const statusIcon =
+    props.condition.state === "destroyed" ? (
+      <ShieldX className="h-4 w-4 text-destructive" />
+    ) : props.condition.state === "disabled" ? (
+      <ShieldAlert className="h-4 w-4 text-amber-500" />
+    ) : (
+      <ShieldCheck className="h-4 w-4 text-emerald-500" />
+    );
+
   return (
-    <div className="relative rounded-lg border bg-background/20 px-4 py-3">
+    <div className="relative rounded-2xl border bg-background/20 px-4 py-3 backdrop-blur">
       <div className="flex items-start justify-between gap-3">
         <button
           type="button"
@@ -1900,20 +2156,19 @@ function SectionWithInstabilityConfirm(props: {
           disabled={props.disabled}
           className={[
             "min-w-0 flex-1 text-left transition-colors",
-            props.disabled ? "cursor-not-allowed opacity-60" : "",
+            props.disabled ? "cursor-not-allowed opacity-60" : "hover:opacity-95",
           ].join(" ")}
         >
           <div className="flex flex-wrap items-center gap-2">
+            {statusIcon}
             <div className="text-sm font-semibold">{props.title}</div>
             {status && (
-              <span className="rounded-md border bg-background/40 px-2 py-0.5 text-xs font-medium">
+              <span className="rounded-full border bg-background/40 px-2.5 py-1 text-[11px] font-medium">
                 {status}
               </span>
             )}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {props.subtitle}
-          </div>
+          <div className="mt-1 text-xs text-muted-foreground">{props.subtitle}</div>
         </button>
 
         <div className="flex flex-col items-end gap-2">
@@ -1971,9 +2226,8 @@ function SectionWithInstabilityConfirm(props: {
   );
 }
 
-/**
- * Renders only as many hexes as needed to cover the filled count, row-by-row.
- */
+/* ---------------- Hex grid ---------------- */
+
 function HexGridRowByRow(props: {
   capacity: number;
   filledValues: number[];
@@ -2010,6 +2264,7 @@ function HexCell(props: { filled: boolean; value: number | null }) {
         "aspect-square w-full",
         "flex items-center justify-center",
         "border",
+        "rounded-md",
         props.filled ? "bg-accent text-accent-foreground" : "bg-background/10",
       ].join(" ")}
       style={{
