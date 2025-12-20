@@ -120,6 +120,14 @@ export const SYSTEMS: SystemDef[] = [
     description:
       "A cannon that launches big blobs of corrosive acid; 3d6+6 acid w/ 100 ft. range and 10 ft. radius.",
   },
+  {
+    id: "toxic-crown",
+    name: "Toxic Crown",
+    cost: 1,
+    tags: ["AP: 1", "Light"],
+    description:
+      "A 360-degree generator for a gas cloud filled with deadly toxins; 6 poison w/ 10 ft. radius. Creatures that are grappled or need to breathe take 18 poison instead, and those of the latter category also start rapidly suffocating.",
+  },
 
   //medium weapons
   {
@@ -155,5 +163,23 @@ export const SYSTEMS: SystemDef[] = [
     tags: ["AP: 1", "Heavy"],
     description:
       "A top-heavy, shell-class warhammer; 12d6+6 bludgeoning w/ 10 ft. reach.",
+  },
+  {
+    id: "icedart-hwacha",
+    name: "Icedart Hwacha",
+    cost: 3,
+    tags: ["AP: 1", "Heavy", "Complexity: 4"],
+    description:
+      "A modern hwacha whose ammo is countless darts of ice filled with poison; 12d6 poison w/ 70 ft. cone. Many of the icedarts crumble when shot, so this weapon also creates a cloud of poisonous mist within the cone that lasts until the end of your next turn. Creatures that are within the mist are lightly obscured and take 6d6 poison damage if they end their turn there.",
+  },
+
+  //super weapons
+  {
+    id: "hailstorm-cluster",
+    name: "Hailstorm Cluster",
+    cost: 5,
+    tags: ["AP: 2", "Super", "Tech", "Homing", "Artillery"],
+    description:
+      "A massive swarm of drones filled to the brim with compressed freezing agents; 6d6+36 cold w/ 100 ft. range and 20 ft. radius. The target must make a Constitution saving throw. You take 1 instability.",
   },
 ];
