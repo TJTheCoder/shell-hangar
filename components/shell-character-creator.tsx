@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useDebouncedEffect } from "@/lib/use-debounced-effect";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -1012,6 +1013,28 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     setSaving(false);
   };
 
+  useDebouncedEffect(
+    () => {
+      // Guard rails
+      if (loading || saving || advancing) return;
+
+      saveWithOverrides();
+    },
+    [
+      shellName,
+      stats,
+      saveProfs,
+      installedSystems,
+      coreSystemId,
+      frameSpecIds,
+      instabilityBuffer,
+      structureState,
+      sparesUsed,
+    ],
+    1000, // 1 second debounce
+    true,
+  );
+
   const save = async () => saveWithOverrides();
 
   /* ---------------- System usage ---------------- */
@@ -1172,7 +1195,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         <div className="absolute inset-0 opacity-[0.18] [background-image:linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:52px_52px]" />
       </div>
 
-      <div className="relative mx-auto w-full max-w-5xl px-4 pb-44 pt-8">
+      <div className="relative mx-auto w-full max-w-5xl px-4 pt-8 pb-[calc(env(safe-area-inset-bottom))]">
         {/* Header */}
         <div className="sticky top-0 z-20 -mx-4 mb-6 border-b bg-background/70 px-4 py-4 backdrop-blur">
           <div className="flex items-start justify-between gap-4">
@@ -1199,11 +1222,16 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             </div>
           )}
 
-          {savedAt && (
-            <div className="mt-4 rounded-md border bg-card/60 p-3 text-sm text-muted-foreground">
-              Saved: {savedAt}
-            </div>
-          )}
+          <div className="min-h-[44px] rounded-md border bg-card p-3 text-sm text-muted-foreground">
+            {saving ? (
+              <span>Saving…</span>
+            ) : savedAt ? (
+              <span>Saved: {savedAt}</span>
+            ) : (
+              // keep height stable even before first save
+              <span className="opacity-0">Saved: never</span>
+            )}
+          </div>
         </div>
 
         {/* Popups */}
