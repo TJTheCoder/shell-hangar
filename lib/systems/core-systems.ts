@@ -28,6 +28,6 @@ export const CORE_SYSTEMS: CoreSystemDef[] = [
     id: "momentary-warp-engine",
     name: "Momentary Warp Engine",
     description:
-      "You teleport when you move and can split up movement into multiple teleports. You can try to teleport to places you can't see, but you take an instability and lose the spent movement if the space is not empty.",
+      "You teleport when you move and can split up movement into multiple teleports. You can try to teleport to places you can't see, but you take 1 instability and lose the spent movement if the space is not empty.",
   },
 ];

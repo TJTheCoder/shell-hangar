@@ -69,9 +69,39 @@ export const SYSTEMS: SystemDef[] = [
     cost: 2,
     tags: ["AP: 1", "Tech"],
     description:
-      "You plant a simple tracking bug on a target creature within range of Sensors. While the tracking bug is active, you always know the target's exact location. The target must make an Intelligence saving throw, and the creature can figure out how to fool/disable the bug with a successful Intelligence check using a bonus action/1 AP. Otherwise, the tracking bug lasts in perpetuity. The target must make an Intelligence saving throw.",
+      "You plant a simple tracking bug on a target creature within range of Sensors. While the tracking bug is active, you always know the target's exact location. The target must make an Intelligence saving throw, and the creature can figure out how to fool/disable the bug with a successful Intelligence check using a bonus action/1 AP. Otherwise, the tracking bug lasts in perpetuity.",
   },
-
+  {
+    id: "actuator-spike",
+    name: "Actuator Spike",
+    cost: 2,
+    tags: ["AP: 2", "Tech", "Bypasses Resistance"],
+    description:
+      "You cripple the motor function of a creature within 10 ft. by flooding them with corrupted noise. The target takes 6d6 psychic damage immediately and at the end of each of their turns, and loses all movement speed while the spike is active. The target must make an Constitution saving throw, and the creature can attempt regain control of its body and remove the spike with a successful Constitution saving throw using an action/2 AP. Otherwise, the spike lasts in perpetuity. You can only have one actuator spike active at a time.",
+  },
+  {
+    id: "special-ammo-case",
+    name: "Special Ammo Case",
+    cost: 1,
+    tags: ["First", "Complexity: 1"],
+    description:
+      "You grant your next attack with a Medium ranged weapon Blizzard, Sunburst, or Magnetic rounds. Blizzard rounds turn the damage into cold damage and push the target back 10 ft., Sunburst rounds turn the damage into radiant damage and cause all creatures within 10 ft. of your targets to automatically take 6 radiant damage that bypasses resistances, and Magnetic rounds turn the damage into piercing damage an grant the weapon Arcing. Regardless of a hit or miss, the rounds are consumed. The area-of-effect of Sunburst rounds applies even if you miss.",
+  },
+  {
+    id: "linear-accelerator",
+    name: "Linear Accelerator",
+    cost: 3,
+    tags: ["First"],
+    description:
+      "You increase your movement speed by 20 ft. and push creatures back an additional 20 ft. when you attack or shove them. These effects last until the start of your next turn. However, you can now only move in a straight line unless you collide with a hostile creature or obstruction, at which point you can change direction. You take 1 instability.",
+  },
+  {
+    id: "battering-ram",
+    name: "Battering Ram",
+    cost: 2,
+    description:
+      "You deal 12 bludgeoning damage when you successfully shove a creature and 60 bludgeoning damage that bypasses resistances when you successfully shove an object/structure. This damage applies even if the objects/structure isn't or can't be moved.",
+  },
 
   //light weapons
   {
