@@ -16,7 +16,7 @@ export const FRAME_SPECS: FrameSpecDef[] = [
     id: "generic-parts",
     name: "Generic Parts",
     description:
-      "When you use repair a structure, you use 1 Spare instead of 2 Spares.",
+      "When you repair a structure, you use 1 Spare instead of 2 Spares.",
   },
   {
     id: "winch-claw",
