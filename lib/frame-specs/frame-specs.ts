@@ -37,6 +37,12 @@ export const FRAME_SPECS: FrameSpecDef[] = [
       "You cannot be pushed, pulled, knocked prone, or shoved by the physical efforts of smaller creatures.",
   },
   {
+    id: "blast-armor",
+    name: "Blast Armor",
+    description:
+      "You take half damage from area-of-effects.",
+  },
+  {
     id: "weather-plating",
     name: "Weather Plating",
     description:
