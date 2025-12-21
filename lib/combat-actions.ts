@@ -99,7 +99,7 @@ export const BASE_ACTIONS: CombatAction[] = [
     name: "Self-Destruct",
     type: "AP1",
     description:
-      "You initiate the self-destruct sequence, setting the countdown to either the end of your current turn or the end of your next turn. Once the countdown expires, the mech destructively explodes in a 20 ft. radius, dealing 12d6 thunder damage and 12d6 force damage to everyone who fails a DC 15 Dexterity save. Creature that succeed take half damage. You can take this action again to disable the detonation sequence.",
+      "You initiate the self-destruct sequence, setting the countdown to either the end of your current turn or the end of your next turn. Once the countdown expires, the mech destructively explodes in a 20 ft. radius, dealing 12d6 thunder damage and 12d6 force damage to everyone who fails a Dexterity save. Creature that succeed take half damage. You can take this action again to disable the detonation sequence.",
   },
   {
     id: "disengage",

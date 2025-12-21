@@ -36,17 +36,17 @@ export const SYSTEMS: SystemDef[] = [
     id: "smoke-charges",
     name: "Smoke Charges",
     cost: 2,
-    tags: ["AP: 1", "Complexity: 3"],
+    tags: ["AP: 1", "Complexity: 3"], //3
     description:
-      "You can either throw a smoke grenade w/ range 50 ft. and 20 ft. radius or plant a smoke mine within 10 ft. w/ a 30 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. The smoke creates an area of heavy obscurement until the end of your next turn or until dispersed by a strong wind.",
+      "You either throw a smoke grenade w/ range 50 ft. and 20 ft. radius or plant a smoke mine within 10 ft. w/ a 30 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. The smoke creates an area of heavy obscurement until the end of your next turn or until dispersed by a strong wind.",
   },
   {
     id: "corrosive-charges",
     name: "Corrosive Charges",
     cost: 2,
-    tags: ["AP: 1", "Complexity: 3"],
+    tags: ["AP: 1", "Complexity: 3"], //3
     description:
-      "You can either throw an acid grenade that deals 6d6 acid damage w/ range 50 ft. and 10 ft. radius or plant an acid mine within 10 ft. that deals 12d6 acid damage w/ a 10 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. All creatures subject to damage must make a Dexterity saving throw. On a success, they take half damage.",
+      "You either throw an acid grenade that deals 6d6 acid damage w/ range 50 ft. and 10 ft. radius or plant an acid mine within 10 ft. that deals 12d6 acid damage w/ a 10 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. All creatures subject to damage must make a Dexterity saving throw. On a success, they take half damage.",
   },
   {
     id: "jump-jets",
@@ -83,7 +83,7 @@ export const SYSTEMS: SystemDef[] = [
     id: "special-ammo-case",
     name: "Special Ammo Case",
     cost: 1,
-    tags: ["First", "Complexity: 2"],
+    tags: ["First", "Complexity: 2"], //6
     description:
       "You grant your next attack with a Medium ranged weapon Blizzard, Sunburst, or Magnetic rounds. Blizzard rounds turn the damage into cold damage and push the target back 10 ft., Sunburst rounds turn the damage into radiant damage and cause all creatures within 10 ft. of your target to automatically take 6 radiant damage that bypasses resistances, and Magnetic rounds turn the damage into piercing damage and grant the weapon Arcing. Regardless of a hit or miss, the rounds are consumed. The area-of-effect of Sunburst rounds applies even if you miss.",
   },
@@ -102,21 +102,37 @@ export const SYSTEMS: SystemDef[] = [
     description:
       "You deal 12 bludgeoning damage when you successfully shove a creature and 60 bludgeoning damage that bypasses resistances when you successfully shove an object/structure. This damage applies even if the objects/structure isn't or can't be moved.",
   },
+  {
+    id: "wired-caltrops",
+    name: "Wired Caltrops",
+    cost: 1,
+    tags: ["AP: 1"],
+    description:
+      "You blanket a 10 ft. radius circle within 50 ft. with caltrops connected by conductive wires. The area becomes difficult terrain and creatures takes 3d6 lightning damage that bypasses resistances when they enter the area for the first time in a round and/or end their turn in it. The hazards are permanent unless cleared.",
+  },
+  {
+    id: "bur-charges",
+    name: "Bur Charges",
+    cost: 2,
+    tags: ["AP: 1", "Complexity: 4"], //2
+    description:
+      "You either throw a spiky grenade that sticks to the target w/ range 50 ft. or plant a cluster mine within 10 ft. that sticks spiky grenades to creatures w/ a 20 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. As a First action, you can detonate all sticky grenades, which deal 3d6+9 piercing damage to the creature they are stuck to and push them 30 ft. in a direction of your choice.Creatures subject to being stuck onto must make a Dexterity saving throw, and they can carefully detach the spiky ball with a successful Dexterity saving throw using a bonus action/1 AP. Otherwise, the bur grenade lasts in perpetuity.",
+  },
 
   //light weapons
   {
-    id: "\"slashy\"",
-    name: "\"Slashy\"",
+    id: "\"lil'-slashy\"",
+    name: "\"Lil' Slashy\"",
     cost: 1,
     tags: ["AP: 1", "Tech", "Light"],
     description:
-      "A frenzied, machete-swinging drone; 3d6 slashing w/ 100 ft. range. The target must make a Dexterity saving throw.",
+      "A bite-sized, knife-swinging drone; 3d6 slashing w/ 100 ft. range. The target must make a Dexterity saving throw.",
   },
   {
     id: "acid-blob-mortar",
     name: "Acid Blob Mortar",
     cost: 1,
-    tags: ["AP: 1", "Light", "Complexity: 2"],
+    tags: ["AP: 1", "Light", "Complexity: 2"], //Loading
     description:
       "A cannon that launches big blobs of corrosive acid; 3d6+6 acid w/ 100 ft. range and 10 ft. radius.",
   },
@@ -170,13 +186,37 @@ export const SYSTEMS: SystemDef[] = [
     description:
       "A set of missiles that burst open in the air, enveloping the target in a dissolvant that burns through cover and armor; 3d6+6 acid w/ 150 ft. range. If there is a net penalty on this roll (disadvantage and/or reduced attack modifier), you instead make the roll completely neutrally.",
   },
+  {
+    id: "\"slashy\"",
+    name: "\"Slashy\"",
+    cost: 2,
+    tags: ["AP: 1", "Tech", "Medium"],
+    description:
+      "A frenzied, machete-swinging drone; 6d6 slashing w/ 100 ft. range. The target must make a Dexterity saving throw.",
+  },
+  {
+    id: "medical-needle",
+    name: "Medical Needle",
+    cost: 2,
+    tags: ["AP: 1", "Medium"],
+    description:
+      "A gigantic needle normally used to deliver life-saving medicine to megafauna; 6d6 poison w/ 50 ft. range (thrown) or 30 ft. reach. Creatures hit/drugged by this weapon are pushed back 10 ft. and have disadvantage on saving throws made to maintain concentration.",
+  },
+  {
+    id: "incendiary-rpg",
+    name: "Incendiary RPG",
+    cost: 2,
+    tags: ["AP: 1", "Medium", "Complexity: 2", "Artillery"], //Loading
+    description:
+      "A rocket-propelled grenade that explodes in a burst of fire; 6d6+6 fire w/ 100 ft. range and 20 ft. radius.",
+  },
 
   //heavy weapons
   {
     id: "tranquilizer-rifle",
     name: "Tranquilizer Rifle",
     cost: 3,
-    tags: ["AP: 1", "Complexity: 2", "Heavy", "Accurate", "Artillery", "Bypasses Resistance"],
+    tags: ["AP: 1", "Complexity: 2", "Heavy", "Accurate", "Artillery", "Bypasses Resistance"], //Loading
     description:
       "A rifle equipped with potent, sedative darts; 12d6 poison w/ 200 ft. range. Creatures reduced to 0 hit points by this are knocked out instead of killed.",
   },
@@ -192,9 +232,9 @@ export const SYSTEMS: SystemDef[] = [
     id: "icedart-hwacha",
     name: "Icedart Hwacha",
     cost: 3,
-    tags: ["AP: 1", "Heavy", "Complexity: 4"],
+    tags: ["AP: 1", "Heavy", "Complexity: 4"], //2
     description:
-      "A modern hwacha whose ammo is countless darts of ice filled with poison; 12d6 poison w/ 70 ft. cone. Many of the icedarts crumble when shot, so this weapon also creates a cloud of poisonous mist within the cone that lasts until the end of your next turn. Creatures that are within the mist are lightly obscured and take 6d6 poison damage if they end their turn there.",
+      "A modern hwacha whose ammo is countless darts of ice filled with poison; 18d6 poison w/ 70 ft. cone. Many of the icedarts crumble when shot, so this weapon also creates a cloud of poisonous mist within the cone that lasts until the end of your next turn. Creatures that are within the mist are lightly obscured and take 6d6 poison damage if they end their turn there.",
   },
   {
     id: "chakram-railgun",
