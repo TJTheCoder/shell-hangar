@@ -77,7 +77,7 @@ export const SYSTEMS: SystemDef[] = [
     cost: 2,
     tags: ["AP: 2", "Tech", "Bypasses Resistance"],
     description:
-      "You cripple the motor function of a creature within 10 ft. by flooding them with corrupted noise. The target takes 6d6 psychic damage immediately and at the end of each of their turns, and loses all movement speed while the spike is active. The target must make an Constitution saving throw, and the creature can attempt regain control of its body and remove the spike with a successful Constitution saving throw using an action/2 AP. Otherwise, the spike lasts in perpetuity. You can only have one actuator spike active at a time.",
+      "You cripple the motor function of a creature within 10 ft. by flooding them with corrupted noise. The target takes 6d6 psychic damage immediately and at the end of each of their turns, and loses all movement speed while the spike is active. The target must make an Constitution saving throw, and the creature can attempt to regain control of its body and remove the spike with a successful Constitution saving throw using an action/2 AP. Otherwise, the spike lasts in perpetuity. You can only have one actuator spike active at a time.",
   },
   {
     id: "special-ammo-case",
@@ -85,7 +85,7 @@ export const SYSTEMS: SystemDef[] = [
     cost: 1,
     tags: ["First", "Complexity: 1"],
     description:
-      "You grant your next attack with a Medium ranged weapon Blizzard, Sunburst, or Magnetic rounds. Blizzard rounds turn the damage into cold damage and push the target back 10 ft., Sunburst rounds turn the damage into radiant damage and cause all creatures within 10 ft. of your targets to automatically take 6 radiant damage that bypasses resistances, and Magnetic rounds turn the damage into piercing damage an grant the weapon Arcing. Regardless of a hit or miss, the rounds are consumed. The area-of-effect of Sunburst rounds applies even if you miss.",
+      "You grant your next attack with a Medium ranged weapon Blizzard, Sunburst, or Magnetic rounds. Blizzard rounds turn the damage into cold damage and push the target back 10 ft., Sunburst rounds turn the damage into radiant damage and cause all creatures within 10 ft. of your target to automatically take 6 radiant damage that bypasses resistances, and Magnetic rounds turn the damage into piercing damage and grant the weapon Arcing. Regardless of a hit or miss, the rounds are consumed. The area-of-effect of Sunburst rounds applies even if you miss.",
   },
   {
     id: "linear-accelerator",
@@ -212,6 +212,6 @@ export const SYSTEMS: SystemDef[] = [
     cost: 5,
     tags: ["AP: 2", "Super", "Tech", "Homing", "Artillery"],
     description:
-      "A massive swarm of drones filled to the brim with compressed freezing agents; 6d6+36 cold w/ 100 ft. range and 20 ft. radius. The target must make a Constitution saving throw. You take 1 instability.",
+      "A massive swarm of drones filled to the brim with compressed freezing agents; 6d6+36 cold w/ 100 ft. range and 20 ft. radius. The targets must make a Constitution saving throw. You take 1 instability.",
   },
 ];
