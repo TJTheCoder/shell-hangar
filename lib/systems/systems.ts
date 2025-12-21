@@ -118,6 +118,22 @@ export const SYSTEMS: SystemDef[] = [
     description:
       "You either throw a spiky grenade that sticks to the target w/ range 50 ft. or plant a cluster mine within 10 ft. that sticks spiky grenades to creatures w/ a 20 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. As a First action, you can detonate all sticky grenades, which deal 3d6+9 piercing damage to the creature they are stuck to and push them 30 ft. in a direction of your choice.Creatures subject to being stuck onto must make a Dexterity saving throw, and they can carefully detach the spiky ball with a successful Dexterity saving throw using a bonus action/1 AP. Otherwise, the bur grenade lasts in perpetuity.",
   },
+  {
+    id: "viper-drone",
+    name: "Viper Drone",
+    cost: 2,
+    tags: ["AP: 1", "Complexity: 3"], //3
+    description:
+      "You deploy a viper drone that can fly a distance equivalent to your base Movement Speed during your turns. As a Reaction whenever a creature deals damage to a target, you can use the drone to make an 18 poison attack w/ 100 ft. range against the same target. Unlike other emplacements, the viper drone makes saves normally. You can only have one viper drone active at a time, and automatically destroy the previous one when deploying another.",
+  },
+  {
+    id: "engineer-drone",
+    name: "Engineer Drone",
+    cost: 2,
+    tags: ["AP: 1", "Complexity: 4"], //1
+    description:
+      "You deploy an engineer drone equipped with fine tools and mending protocols. During your turn, you can expend any amount of your own movement to let the drone fly an equivalent distance. By using 1 AP while within 10 ft. of the drone, a shell you grant permission to can instantly repair one disabled system/structure with a remaining timer of 2. Unlike other emplacements, the engineer drone makes saves normally. You can only have one engineer drone active at a time, and automatically destroy the previous one when deploying another.",
+  },
 
   //light weapons
   {
