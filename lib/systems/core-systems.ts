@@ -10,7 +10,7 @@ export const CORE_SYSTEMS: CoreSystemDef[] = [
     id: "apex-drive",
     name: "Apex Drive",
     description:
-      "You have advantage on all attacks, checks, and saving throws. In addition, you can Dash as a first action.",
+      "You have advantage on all attacks, checks, and saving throws. In addition, you can dash as a first action.",
   },
   {
     id: "brwnn-copilot",
