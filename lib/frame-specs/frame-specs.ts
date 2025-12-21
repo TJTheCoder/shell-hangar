@@ -85,8 +85,8 @@ export const FRAME_SPECS: FrameSpecDef[] = [
       "When you mark a creature, the attack that consumes the mark bypasses resistances.",
   },
   {
-    id: "pristine-code",
-    name: "Pristine Code",
+    id: "malicious-code",
+    name: "Malicious Code",
     description:
       "Creatures who have to make a saving throw against your tech abilities have disadvantage.",
   },
