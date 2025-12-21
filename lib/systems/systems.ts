@@ -157,10 +157,18 @@ export const SYSTEMS: SystemDef[] = [
   {
     id: "cryogenic-gauntlet",
     name: "Cryogenic Gauntlet",
-    cost: 1,
+    cost: 2,
     tags: ["AP: 1", "Medium"],
     description:
       "A fist encasing constantly cooled to extremely low temperatures; 3d6+12 cold w/ 10 ft. reach. You can attack twice with this weapon.",
+  },
+  {
+    id: "caustic-penetrant-missiles",
+    name: "Caustic Penetrant Missiles",
+    cost: 3,
+    tags: ["AP: 1", "Arcing", "Medium"],
+    description:
+      "A set of missiles that burst open in the air, enveloping the target in a dissolvant that burns through cover and armor; 3d6+6 acid w/ 150 ft. range. If there is a net penalty on this roll (disadvantage and/or reduced attack modifier), you instead make the roll completely neutrally.",
   },
 
   //heavy weapons
