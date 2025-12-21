@@ -83,7 +83,7 @@ export const SYSTEMS: SystemDef[] = [
     id: "special-ammo-case",
     name: "Special Ammo Case",
     cost: 1,
-    tags: ["First", "Complexity: 1"],
+    tags: ["First", "Complexity: 2"],
     description:
       "You grant your next attack with a Medium ranged weapon Blizzard, Sunburst, or Magnetic rounds. Blizzard rounds turn the damage into cold damage and push the target back 10 ft., Sunburst rounds turn the damage into radiant damage and cause all creatures within 10 ft. of your target to automatically take 6 radiant damage that bypasses resistances, and Magnetic rounds turn the damage into piercing damage and grant the weapon Arcing. Regardless of a hit or miss, the rounds are consumed. The area-of-effect of Sunburst rounds applies even if you miss.",
   },
@@ -116,7 +116,7 @@ export const SYSTEMS: SystemDef[] = [
     id: "acid-blob-mortar",
     name: "Acid Blob Mortar",
     cost: 1,
-    tags: ["AP: 1", "Light", "Complexity: 1"],
+    tags: ["AP: 1", "Light", "Complexity: 2"],
     description:
       "A cannon that launches big blobs of corrosive acid; 3d6+6 acid w/ 100 ft. range and 10 ft. radius.",
   },
@@ -176,7 +176,7 @@ export const SYSTEMS: SystemDef[] = [
     id: "tranquilizer-rifle",
     name: "Tranquilizer Rifle",
     cost: 3,
-    tags: ["AP: 1", "Complexity: 1", "Heavy", "Accurate", "Artillery", "Bypasses Resistance"],
+    tags: ["AP: 1", "Complexity: 2", "Heavy", "Accurate", "Artillery", "Bypasses Resistance"],
     description:
       "A rifle equipped with potent, sedative darts; 12d6 poison w/ 200 ft. range. Creatures reduced to 0 hit points by this are knocked out instead of killed.",
   },
