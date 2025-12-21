@@ -146,6 +146,22 @@ export const SYSTEMS: SystemDef[] = [
     description:
       "A sword whose blade is pure plasma; 3d6+18 radiant w/ 10 ft. reach.",
   },
+  {
+    id: "bb-shotgun",
+    name: "BB Shotgun",
+    cost: 2,
+    tags: ["AP: 1", "Medium"],
+    description:
+      "A shotgun that fires a spread of dense metallic balls; 6d6 bludgeoning w/ 50 ft. range or 30 ft. reach.",
+  },
+  {
+    id: "cryogenic-gauntlet",
+    name: "Cryogenic Gauntlet",
+    cost: 1,
+    tags: ["AP: 1", "Medium"],
+    description:
+      "A fist encasing constantly cooled to extremely low temperatures; 3d6+12 cold w/ 10 ft. reach. You can attack twice with this weapon.",
+  },
 
   //heavy weapons
   {
@@ -171,6 +187,14 @@ export const SYSTEMS: SystemDef[] = [
     tags: ["AP: 1", "Heavy", "Complexity: 4"],
     description:
       "A modern hwacha whose ammo is countless darts of ice filled with poison; 12d6 poison w/ 70 ft. cone. Many of the icedarts crumble when shot, so this weapon also creates a cloud of poisonous mist within the cone that lasts until the end of your next turn. Creatures that are within the mist are lightly obscured and take 6d6 poison damage if they end their turn there.",
+  },
+  {
+    id: "chakram-railgun",
+    name: "Chakram Railgun",
+    cost: 3,
+    tags: ["AP: 1", "Heavy", "Bypasses Resistance", "Artillery"],
+    description:
+      "A railgun that accelerates and launches spinning, bladed chakrams; 6d6+24 slashing w/ 20 ft. long, 10 ft. wide, and 10 ft. tall line. You take 1 instability.",
   },
 
   //super weapons
