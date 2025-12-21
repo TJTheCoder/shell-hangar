@@ -38,7 +38,7 @@ export const SYSTEMS: SystemDef[] = [
     cost: 2,
     tags: ["AP: 1", "Complexity: 3"],
     description:
-      "You can either throw a smoke grenade w/ range 50 ft. and 20 ft. radius or plant a smoke mine w/ a 30 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. The smoke creates an area of heavy obscurement until the end of your next turn or until dispersed by a strong wind.",
+      "You can either throw a smoke grenade w/ range 50 ft. and 20 ft. radius or plant a smoke mine within 10 ft. w/ a 30 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. The smoke creates an area of heavy obscurement until the end of your next turn or until dispersed by a strong wind.",
   },
   {
     id: "corrosive-charges",
@@ -46,7 +46,7 @@ export const SYSTEMS: SystemDef[] = [
     cost: 2,
     tags: ["AP: 1", "Complexity: 3"],
     description:
-      "You can either throw an acid grenade that deals 6d6 acid damage w/ range 50 ft. and 10 ft. radius or plant an acid mine that deals 12d6 acid damage w/ a 10 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. All creatures subject to damage must make a Dexterity saving throw. On a success, they take half damage.",
+      "You can either throw an acid grenade that deals 6d6 acid damage w/ range 50 ft. and 10 ft. radius or plant an acid mine within 10 ft. that deals 12d6 acid damage w/ a 10 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. All creatures subject to damage must make a Dexterity saving throw. On a success, they take half damage.",
   },
   {
     id: "jump-jets",
