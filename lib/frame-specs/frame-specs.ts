@@ -85,16 +85,10 @@ export const FRAME_SPECS: FrameSpecDef[] = [
       "When you mark a creature, the attack that consumes the mark bypasses resistances.",
   },
   {
-    id: "malicious-code",
-    name: "Malicious Code",
-    description:
-      "Creatures who have to make a saving throw against your tech abilities have disadvantage.",
-  },
-  {
     id: "quantum-exploit-suite",
     name: "Quantum Exploit Suite",
     description:
-      "Creatures who have to make a saving throw against your tech abilities have disadvantage.",
+      "Creatures who have to make a saving throw against your Tech abilities have disadvantage.",
   },
   {
     id: "countercode",
