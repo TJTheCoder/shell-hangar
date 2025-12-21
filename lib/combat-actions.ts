@@ -32,6 +32,13 @@ export const BASE_ACTIONS: CombatAction[] = [
       "You overclock your core, allowing you to gain 1 additional AP this turn. You take 1 instability.",
   },
   {
+    id: "manage-instabilities",
+    name: "Manage Instabilities",
+    type: "FIRST",
+    description:
+      "You manage your instability buffer, taking any amount of instabilities on it.",
+  },
+  {
     id: "dash",
     name: "Dash",
     type: "AP1",
