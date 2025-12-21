@@ -134,6 +134,21 @@ export const SYSTEMS: SystemDef[] = [
     description:
       "You deploy an engineer drone equipped with fine tools and mending protocols. During your turn, you can expend any amount of your own movement to let the drone fly an equivalent distance. By using 1 AP while within 10 ft. of the drone, a shell you grant permission to can instantly repair one disabled system/structure with a remaining timer of 2. Unlike other emplacements, the engineer drone makes saves normally. You can only have one engineer drone active at a time, and automatically destroy the previous one when deploying another.",
   },
+  {
+    id: "cloaking-field",
+    name: "Cloaking Field",
+    cost: 4,
+    tags: ["AP: 1"], //1
+    description:
+      "You create a 20 ft. emanation centered on yourself that turns all creatures of your choice inside it Invisible. This lasts until the end of your next turn, you take damage, or this system is destroyed. However, your Movement Speed is halved, you cannot dash, and cannot benefit from any abilities or effects that increase or grant movement. You take 1 instability.",
+  },
+  {
+    id: "flash-chaff",
+    name: "Flash Chaff",
+    cost: 1,
+    description:
+      "You become Invisible until the end of your next turn after you guard and can immediately move up to your Movement Speed.",
+  },
 
   //light weapons
   {
