@@ -120,7 +120,7 @@ export const BASE_ACTIONS: CombatAction[] = [
     name: "Gossamer Veil",
     type: "AP2",
     description:
-      "You de-quantize the glox spool attached to your back, forcing a creature within 10 ft. to make a CHA save. On a failed save, a wave-particle domain envelops you and your target, rendering you both unable to interact with any other creature. The effect ends when your Back is disabled/destroyed, you end it at will, or when the field itself is destroyed. The field can be attacked when an external creature uses an attack that targets either you or the target or when the target attacks any empty space around them. To destroy the field, which shares your immunities, damage equivalent to twice your Damage Threshold must be dealt in one instance of damage.",
+      "You de-quantize the glox spool attached to your back, forcing a creature within 10 ft. to make a CHA save. On a failed save, a wave-particle domain envelops you and your target, rendering you both unable to interact with any other creature. The effect ends when your Back is disabled/destroyed, you end it at will, or when the field itself is destroyed. The field can be attacked when an external creature uses an attack that targets either you or the target or when the target attacks any empty space around them. To destroy the field, which shares your immunities, damage exceeding your Double Damage Threshold must be dealt in one instance of damage.",
   },
   {
     id: "guard",
