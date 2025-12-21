@@ -134,6 +134,6 @@ export const BASE_ACTIONS: CombatAction[] = [
     name: "Opportunity Attack (Shell)",
     type: "REACTION",
     description:
-      "You make an attack with a melee weapon against a creature who has entered, exited, or moved around within the spherical space carved out by that melee weapon's reach. If two Light weapons are eligible for an opportunity attack, you can use both of them.",
+      "You make an attack with a melee weapon that is at most Heavy against a creature who has entered, exited, or moved around within the spherical space carved out by that melee weapon's reach. If two Light weapons are eligible for an opportunity attack, you can use both of them.",
   },
 ];
