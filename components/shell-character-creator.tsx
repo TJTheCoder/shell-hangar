@@ -1454,7 +1454,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
               <div className="mt-6 text-sm font-semibold">Sensors</div>
               <div className="mt-3 grid gap-2">
-                <Row label="Sensors Range" value={`${sensorsRangeFt} ft`} />
+                <Row label="Sensor Range" value={`${sensorsRangeFt} ft`} />
               </div>
 
               <div className="mt-6 text-sm font-semibold">Immunities</div>
