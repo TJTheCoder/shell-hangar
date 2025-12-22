@@ -38,15 +38,15 @@ export const SYSTEMS: SystemDef[] = [
     cost: 2,
     tags: ["AP: 1", "Complexity: 3"], //3
     description:
-      "You either throw a smoke grenade w/ range 50 ft. and 20 ft. radius or plant a smoke mine within 10 ft. w/ a 30 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. The smoke creates an area of heavy obscurement until the end of your next turn or until dispersed by a strong wind.",
+      "You either throw a smoke grenade w/ range 50 ft. and 20 ft. radius or plant a smoke mine (emplacement) within 10 ft. w/ a 30 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it, and the mine detonates if destroyed. The smoke creates an area of heavy obscurement until the end of your next turn or until dispersed by a strong wind.",
   },
   {
     id: "corrosive-charges",
     name: "Corrosive Charges",
     cost: 2,
-    tags: ["AP: 1", "Complexity: 3"], //3
+    tags: ["AP: 1", "Complexity: 3",], //3
     description:
-      "You either throw an acid grenade that deals 6d6 acid damage w/ range 50 ft. and 10 ft. radius or plant an acid mine within 10 ft. that deals 12d6 acid damage w/ a 10 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. All creatures subject to damage must make a Dexterity saving throw. On a success, they take half damage.",
+      "You either throw an acid grenade that deals 6d6 acid damage w/ range 50 ft. and 10 ft. radius or plant an acid mine (emplacement) within 10 ft. that deals 12d6 acid damage w/ a 10 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it, and the mine detonates if destroyed. All creatures subject to damage must make a Dexterity saving throw. On a success, they take half damage.",
   },
   {
     id: "jump-jets",
@@ -116,13 +116,13 @@ export const SYSTEMS: SystemDef[] = [
     cost: 2,
     tags: ["AP: 1", "Complexity: 4"], //2
     description:
-      "You either throw a spiky grenade that sticks to the target w/ range 50 ft. or plant a cluster mine within 10 ft. that sticks spiky grenades to creatures w/ a 20 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it. As a First action, you can detonate all sticky grenades, which deal 3d6+9 piercing damage to the creature they are stuck to and push them 30 ft. in a direction of your choice.Creatures subject to being stuck onto must make a Dexterity saving throw, and they can carefully detach the spiky ball with a successful Dexterity saving throw using a bonus action/1 AP. Otherwise, the bur grenade lasts in perpetuity.",
+      "You either throw a spiky grenade that sticks to the target w/ range 50 ft. or plant a cluster mine (emplacement) within 10 ft. that sticks spiky grenades to creatures w/ a 20 ft. detonation radius. You can specify specific creatures that trigger or don't trigger the mine when planting it, and the mine detonates if destroyed. As a First action, you can detonate all sticky grenades, which deal 3d6+9 piercing damage to the creature they are stuck to and push them 30 ft. in a direction of your choice.Creatures subject to being stuck onto must make a Dexterity saving throw, and they can carefully detach the spiky ball with a successful Dexterity saving throw using a bonus action/1 AP. Otherwise, the bur grenade lasts in perpetuity.",
   },
   {
     id: "viper-drone",
     name: "Viper Drone",
     cost: 2,
-    tags: ["AP: 1", "Complexity: 3"], //3
+    tags: ["AP: 1", "Complexity: 3", "Emplacement"], //3
     description:
       "You deploy a viper drone that can fly a distance equivalent to your base Movement Speed during your turns. As a Reaction whenever a creature deals damage to a target, you can use the drone to make an 18 poison attack w/ 100 ft. range against the same target. Unlike other emplacements, the viper drone makes saves normally. You can only have one viper drone active at a time, and automatically destroy the previous one when deploying another.",
   },
@@ -130,7 +130,7 @@ export const SYSTEMS: SystemDef[] = [
     id: "engineer-drone",
     name: "Engineer Drone",
     cost: 2,
-    tags: ["AP: 1", "Complexity: 4"], //1
+    tags: ["AP: 1", "Complexity: 4", "Emplacement"], //1
     description:
       "You deploy an engineer drone equipped with fine tools and mending protocols. During your turn, you can expend any amount of your own movement to let the drone fly an equivalent distance. By using 1 AP while within 10 ft. of the drone, a shell you grant permission to can instantly repair one disabled system/structure with a remaining timer of 2. Unlike other emplacements, the engineer drone makes saves normally. You can only have one engineer drone active at a time, and automatically destroy the previous one when deploying another.",
   },
@@ -150,12 +150,20 @@ export const SYSTEMS: SystemDef[] = [
       "You become Invisible until the end of your next turn after you guard and can immediately move up to your Movement Speed.",
   },
   {
-    id: "Data-uplink",
+    id: "data-uplink",
     name: "Data Uplink",
     cost: 2,
     tags: ["AP: 1", "Tech"],
     description:
       "You link with the systems of a willing shell within range of Sensors, allowing you to use their Sensors as your own and granting them the option to make Wisdom saving throws using your modifier. However, any time either shell takes an instability or suffers a condition, the other shell suffers the same effect on the same face. You can only host a link with one shell at a time, but they can daisy-chain with their own uplink. The connection is severed when the target shell leaves the range of your Sensors or when you initiate a link with another shell.",
+  },
+  {
+    id: "zip-line-rail",
+    name: "Zip Line Rail",
+    cost: 1,
+    tags: ["AP: 1", "Emplacement"],
+    description:
+      "You linearly connect two empty spaces that are at most 80 ft. apart, where at least one end must be within 10 ft. of you and both ends are affixed to a solid or otherwise stable surface. A heavy-duty rail sets itself up along the zip line, and activates at the end of your turn. Large or smaller creatures within 10 ft. of the rail can snap themselves to it and travel any distance along the rail in a direction of their choosing without using their own movement, but they cannot end their movement on the rail. When they disembark, they snap off the rail at any empty space of their choosing within 10 ft. of their dismount point. Huge or larger creatures cannot use the rail to travel and instead treat it as a tripwire. When they move onto the rail the first time in a round or they start their turn on it, they must make a Dexterity saving throw or be knocked prone. A creature can tear down the rail with a successful Strength check using a bonus action/1 AP. Otherwise, the zip line rail lasts in perpetuity unless destroyed. You can only have one zip line rail active at a time, and the former is instantly destroyed if you place down another.",
   },
 
   //light weapons
