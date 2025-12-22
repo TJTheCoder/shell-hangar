@@ -155,7 +155,7 @@ export const SYSTEMS: SystemDef[] = [
     cost: 2,
     tags: ["AP: 1", "Tech"],
     description:
-      "You link with the systems of a willing shell within range of Sensors, allowing you to use their Sensors as your own and granting them the options to make Wisdom saving throws using your modifier. However, any time either shell takes an instability or suffers a condition, the other shell suffers the same effect on the same face. You can only host a link with one shell at a time, but they can daisy-chain with their own uplink. The connection is severed when the target shell leaves the range of your Sensors or when you link with another shell.",
+      "You link with the systems of a willing shell within range of Sensors, allowing you to use their Sensors as your own and granting them the option to make Wisdom saving throws using your modifier. However, any time either shell takes an instability or suffers a condition, the other shell suffers the same effect on the same face. You can only host a link with one shell at a time, but they can daisy-chain with their own uplink. The connection is severed when the target shell leaves the range of your Sensors or when you link with another shell.",
   },
 
   //light weapons
