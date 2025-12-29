@@ -52,7 +52,7 @@ export function FrameSpecsModal(props: {
           <div>
             <div className="text-lg font-semibold">Frame Specs</div>
             <div className="mt-1 text-xs text-muted-foreground">
-              Select {maxSelected}. Selected: {selectedIds.length}/{maxSelected}
+              Selected: {selectedIds.length}/{maxSelected}
             </div>
           </div>
           <Button variant="outline" onClick={onClose}>

@@ -61,8 +61,6 @@ type InstalledSystem = {
 type StructureKey = SystemSlot | "core";
 type StructureState = Record<StructureKey, SystemCondition>;
 
-type RollMode = "normal" | "adv" | "dis";
-
 /* ---------------- Constants ---------------- */
 
 const STAT_DEFS: Array<{ key: AbilityKey; label: string; short: string }> = [
@@ -86,15 +84,31 @@ const DEFAULT_STATS: Stats = {
 const MAX_GENERATION = 99;
 
 const PROF_BONUS = 6;
-const PER_SLOT_CAP = 6;
+
+// System caps (UPDATED)
+// - Total cap unchanged (computed from Techno)
+// - Hull has a SLOT COST cap of 4
+const HULL_COST_CAP = 4;
 
 const SLOT_LABELS: Record<SystemSlot, string> = {
   hull: "Hull",
+  disk: "Disk",
   left_arm: "Left Arm",
   right_arm: "Right Arm",
-  legs: "Legs",
   back: "Back",
+  legs: "Legs",
 };
+
+// Display order (UPDATED)
+const STRUCTURE_ORDER: Array<[label: string, key: StructureKey]> = [
+  ["Core", "core"],
+  ["Hull", "hull"],
+  ["Disk", "disk"],
+  ["Left Arm", "left_arm"],
+  ["Right Arm", "right_arm"],
+  ["Back", "back"],
+  ["Legs", "legs"],
+];
 
 /* ---------------- Utils ---------------- */
 
@@ -107,6 +121,7 @@ const abilityMod = (score: number) => Math.floor((score - 10) / 2);
 function isSystemSlot(x: unknown): x is SystemSlot {
   return (
     x === "hull" ||
+    x === "disk" ||
     x === "left_arm" ||
     x === "right_arm" ||
     x === "legs" ||
@@ -145,16 +160,6 @@ function conditionLabel(c: SystemCondition) {
   return null;
 }
 
-function isEligibleForTarget(c: SystemCondition) {
-  return c.state !== "destroyed";
-}
-
-function pickRandom<T>(arr: T[]) {
-  if (arr.length === 0) return null;
-  const idx = Math.floor(Math.random() * arr.length);
-  return arr[idx];
-}
-
 function decrementDisabled(cond: SystemCondition): SystemCondition {
   if (cond.state === "destroyed") return cond;
   if (cond.state === "disabled") {
@@ -173,6 +178,32 @@ function hasAnyDisabled(installed: InstalledSystem[], structures: StructureState
     (c) => normalizeCondition(c).state === "disabled",
   );
   return sysHas || structHas;
+}
+
+function d6(): number {
+  // Client-side RNG; avoids having to update /api/instability.
+  const u = new Uint32Array(1);
+  crypto.getRandomValues(u);
+  return (u[0] % 6) + 1;
+}
+
+function applyInstabilityToCondition(
+  cur: SystemCondition,
+  result: number,
+): SystemCondition {
+  const c = normalizeCondition(cur);
+
+  if (result === 1) return { state: "destroyed" };
+
+  if (c.state === "destroyed") return c;
+
+  if (c.state === "disabled") {
+    // IMPORTANT: increment by 1 (no stacking/append)
+    return { state: "disabled", count: c.count + 1 };
+  }
+
+  // fresh disable is 2 turns
+  return { state: "disabled", count: 2 };
 }
 
 /**
@@ -196,10 +227,6 @@ function parseDiceExpression(expr: string): {
 
   const s = raw.replace(/\s+/g, "").toLowerCase();
 
-  // Tokenize by leading sign then term
-  // Term is either:
-  //  - NdM or dM
-  //  - integer
   const re = /([+-]?)(\d*d\d+|\d+)/g;
   let m: RegExpExecArray | null;
 
@@ -215,13 +242,8 @@ function parseDiceExpression(expr: string): {
     const signStr = m[1] ?? "";
     const termStr = m[2] ?? "";
 
-    // Ensure contiguous coverage (reject stray characters)
     if (m.index !== consumed) {
-      return {
-        ok: false,
-        normalized: s,
-        error: "Invalid roll format.",
-      };
+      return { ok: false, normalized: s, error: "Invalid roll format." };
     }
     consumed += full.length;
 
@@ -261,7 +283,6 @@ function parseDiceExpression(expr: string): {
     return { ok: false, normalized: s, error: "Invalid roll format." };
   }
 
-  // Normalize
   const normalized = terms
     .map((t, i) => {
       const sign = t.sign === -1 ? "-" : i === 0 ? "" : "+";
@@ -281,9 +302,9 @@ function rollDiceExpression(expr: string): {
   error?: string;
 } {
   const parsed = parseDiceExpression(expr);
-  if (!parsed.ok || !parsed.terms) return { ok: false, error: parsed.error ?? "Invalid roll." };
+  if (!parsed.ok || !parsed.terms)
+    return { ok: false, error: parsed.error ?? "Invalid roll." };
 
-  // Safety rails
   const totalDice = parsed.terms
     .filter((t) => t.kind === "dice")
     .reduce((sum, t) => sum + (t.kind === "dice" ? t.count : 0), 0);
@@ -311,17 +332,16 @@ function rollDiceExpression(expr: string): {
     total += t.sign * subtotal;
 
     const rollList =
-      rolls.length <= 30 ? `[${rolls.join(", ")}]` : `[${rolls.slice(0, 30).join(", ")}, …]`;
+      rolls.length <= 30
+        ? `[${rolls.join(", ")}]`
+        : `[${rolls.slice(0, 30).join(", ")}, …]`;
 
     lines.push(
       `${t.sign === -1 ? "−" : "+"}${t.count}d${t.sides} ${rollList} = ${subtotal}`,
     );
   }
 
-  // Pretty breakdown without a leading "+"
-  const breakdown = lines
-    .join("\n")
-    .replace(/^\+/, "");
+  const breakdown = lines.join("\n").replace(/^\+/, "");
 
   return { ok: true, normalized: parsed.normalized, total, breakdown };
 }
@@ -341,10 +361,14 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
   const [frameSpecIds, setFrameSpecIds] = useState<string[]>([]);
   const [frameSpecsOpen, setFrameSpecsOpen] = useState(false);
 
-  const [installedSystems, setInstalledSystems] = useState<InstalledSystem[]>([]);
+  const [installedSystems, setInstalledSystems] = useState<InstalledSystem[]>(
+    [],
+  );
 
+  // Structures (UPDATED: adds Disk)
   const [structureState, setStructureState] = useState<StructureState>({
     hull: { state: "ok" },
+    disk: { state: "ok" },
     left_arm: { state: "ok" },
     right_arm: { state: "ok" },
     legs: { state: "ok" },
@@ -511,6 +535,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
   const skillBonus = (key: AbilityKey) => abilityMod(stats[key]) + PROF_BONUS;
 
+  // Total cap unchanged
   const TOTAL_CAP = 19 + systemCapacityBonus;
 
   /* ---------------- Buffer behavior ---------------- */
@@ -556,15 +581,18 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     [installedSystems],
   );
 
+  // UPDATED: no system-count limit; hull has cost cap 4; total cap unchanged
   const installSystem = (systemId: string, slot: SystemSlot) => {
     if (installedSystemIdSet.has(systemId)) return;
 
     const cost = getSystemCost(systemId);
-    const wouldSlot = getSlotCost(slot) + cost;
     const wouldTotal = getTotalCost() + cost;
-
-    if (wouldSlot > PER_SLOT_CAP) return;
     if (wouldTotal > TOTAL_CAP) return;
+
+    if (slot === "hull") {
+      const wouldHull = getSlotCost("hull") + cost;
+      if (wouldHull > HULL_COST_CAP) return;
+    }
 
     setInstalledSystems((prev) => [
       ...prev,
@@ -638,60 +666,68 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     }>;
   }, [installedSystems]);
 
-  /* ---------------- Instability rolling ---------------- */
+  /* ---------------- Instability rolling (UPDATED) ---------------- */
 
-  const getRollModeFor = (slot: StructureKey): RollMode => {
-    if (slot === "core") return "dis";
-    if (slot === "hull") {
-      const hull = structureState.hull;
-      if (hull.state === "disabled") return "normal";
-      return "adv";
+  // Hull advantage (UPDATED):
+  // "Hull has advantages equal to intact non-Core systems."
+  // We interpret this as: count of non-core structures in state "ok" (includes Hull itself).
+  // If Hull is disabled, it has 0 advantages.
+  const hullAdvantages = useMemo(() => {
+    const hull = normalizeCondition(structureState.hull);
+    if (hull.state === "disabled") return 0;
+
+    const nonCore: SystemSlot[] = [
+      "hull",
+      "disk",
+      "left_arm",
+      "right_arm",
+      "back",
+      "legs",
+    ];
+
+    let intact = 0;
+    for (const k of nonCore) {
+      const c = normalizeCondition(structureState[k]);
+      if (c.state === "ok") intact += 1;
     }
-    return "normal";
-  };
+    return intact;
+  }, [structureState]);
 
   const rollInstability = async (slot: StructureKey) => {
     setError(null);
 
-    const mode = getRollModeFor(slot);
-
+    // Determine roll set + selection rule
     let rolls: number[] = [];
-    let result: number | null = null;
 
-    try {
-      const res = await fetch("/api/instability", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
-      });
-      if (!res.ok) throw new Error(`Instability roll failed (${res.status})`);
-      const json = (await res.json()) as {
-        mode: RollMode;
-        rolls: number[];
-        result: number;
-      };
-
-      rolls = Array.isArray(json.rolls) ? json.rolls.map(Number) : [];
-      result = Number(json.result);
-
-      if (
-        !Number.isFinite(result) ||
-        result < 1 ||
-        result > 6 ||
-        rolls.some((r) => !Number.isFinite(r) || r < 1 || r > 6)
-      ) {
-        throw new Error("Invalid roll result returned by backend.");
-      }
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to roll instability.");
-      return;
+    if (slot === "core") {
+      // Disadvantage: 2d6 take lowest
+      const r1 = d6();
+      const r2 = d6();
+      rolls = [r1, r2];
+    } else if (slot === "hull") {
+      // Advantage: (advantages + 1) d6 take highest; if disabled, no advantage => 1 roll
+      const count = Math.max(1, hullAdvantages);
+      rolls = Array.from({ length: count }, () => d6());
+    } else {
+      // Normal: 1d6
+      rolls = [d6()];
     }
 
-    const rollHeader =
-      rolls.length === 2
-        ? `${mode === "adv" ? "Advantage" : "Disadvantage"}: [${rolls[0]}, ${rolls[1]}] → ${result}`
-        : `Roll: ${result}`;
+    const result =
+      slot === "core"
+        ? Math.min(...rolls)
+        : slot === "hull"
+          ? Math.max(...rolls)
+          : rolls[0];
 
+    const rollHeader =
+      slot === "core"
+        ? `Disadvantage: [${rolls.join(", ")}] → ${result}`
+        : slot === "hull" && rolls.length > 1
+          ? `Advantage x${hullAdvantages - 1}: [${rolls.join(", ")}] → ${result}`
+          : `Roll: ${result}`;
+
+    // No effect on 4+
     if (result >= 4) {
       setInstabilityPopup({
         open: true,
@@ -701,26 +737,19 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       return;
     }
 
+    // Core special behavior retained
     if (slot === "core") {
       const cur = normalizeCondition(structureState.core);
-
-      const nextCore =
-        result === 1
-          ? ({ state: "destroyed" } as SystemCondition)
-          : cur.state === "destroyed"
-            ? cur
-            : cur.state === "disabled"
-              ? ({ state: "disabled", count: cur.count + 1 } as SystemCondition)
-              : ({ state: "disabled", count: 2 } as SystemCondition);
+      const nextCore = applyInstabilityToCondition(cur, result);
 
       setStructureState((prev) => ({ ...prev, core: nextCore }));
 
       const outcome =
-        result === 1
+        nextCore.state === "destroyed"
           ? "Destroyed"
-          : cur.state === "disabled"
-            ? `Disabled: ${cur.count + 1}`
-            : "Disabled: 2";
+          : nextCore.state === "disabled"
+            ? `Disabled: ${nextCore.count}`
+            : "OK";
 
       setInstabilityPopup({
         open: true,
@@ -730,83 +759,34 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       return;
     }
 
-    const candidates = installedSystems
-      .filter((s) => s.slot === slot)
-      .map((s) => ({
-        ...s,
-        condition: normalizeCondition(s.condition),
-      }))
-      .filter((s) => isEligibleForTarget(s.condition));
+    // UPDATED: Instabilities always apply to the STRUCTURE (not a random system),
+    // and then ALL systems in that structure copy the same effect.
+    const curStruct = normalizeCondition(structureState[slot]);
+    const nextStruct = applyInstabilityToCondition(curStruct, result);
 
-    const targetSystem = pickRandom(candidates);
-
-    const applyToStructure = () => {
-      const cur = normalizeCondition(structureState[slot]);
-
-      const next =
-        result === 1
-          ? ({ state: "destroyed" } as SystemCondition)
-          : cur.state === "destroyed"
-            ? cur
-            : cur.state === "disabled"
-              ? ({ state: "disabled", count: cur.count + 1 } as SystemCondition)
-              : ({ state: "disabled", count: 2 } as SystemCondition);
-
-      setStructureState((prev) => ({ ...prev, [slot]: next }));
-
-      const outcome =
-        result === 1
-          ? "Destroyed"
-          : cur.state === "disabled"
-            ? `Disabled: ${cur.count + 1}`
-            : "Disabled: 2";
-
-      setInstabilityPopup({
-        open: true,
-        title: `Instability (${SLOT_LABELS[slot]})`,
-        body: `${rollHeader}\nNo eligible systems. ${SLOT_LABELS[slot]} structure is now ${outcome}.`,
-      });
-    };
-
-    if (!targetSystem) {
-      applyToStructure();
-      return;
-    }
-
-    const sysDef = SYSTEMS.find((x) => x.id === targetSystem.systemId);
-    const sysName = sysDef?.name ?? targetSystem.systemId;
-
-    const curCond = normalizeCondition(targetSystem.condition);
+    setStructureState((prev) => ({ ...prev, [slot]: nextStruct }));
 
     setInstalledSystems((prev) =>
       prev.map((s) => {
-        if (s.systemId !== targetSystem.systemId) return s;
+        if (s.slot !== slot) return s;
 
         const cur = normalizeCondition(s.condition);
-
-        if (result === 1) return { ...s, condition: { state: "destroyed" } };
-
-        if (cur.state === "destroyed") return s;
-
-        if (cur.state === "disabled") {
-          return { ...s, condition: { state: "disabled", count: cur.count + 1 } };
-        }
-
-        return { ...s, condition: { state: "disabled", count: 2 } };
+        const next = applyInstabilityToCondition(cur, result);
+        return { ...s, condition: next };
       }),
     );
 
     const outcome =
-      result === 1
+      nextStruct.state === "destroyed"
         ? "Destroyed"
-        : curCond.state === "disabled"
-          ? `Disabled: ${curCond.count + 1}`
-          : "Disabled: 2";
+        : nextStruct.state === "disabled"
+          ? `Disabled: ${nextStruct.count}`
+          : "OK";
 
     setInstabilityPopup({
       open: true,
       title: `Instability (${SLOT_LABELS[slot]})`,
-      body: `${rollHeader}\n${sysName} is now ${outcome}.`,
+      body: `${rollHeader}\n${SLOT_LABELS[slot]} structure and its installed systems are now ${outcome}.`,
     });
   };
 
@@ -873,8 +853,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               condition: normalizeCondition(x?.condition),
             }))
             .filter(
-              (x: any) =>
-                typeof x.systemId === "string" && isSystemSlot(x.slot),
+              (x: any) => typeof x.systemId === "string" && isSystemSlot(x.slot),
             )
             .map((x: any) => ({
               systemId: x.systemId,
@@ -901,6 +880,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         if (rawStructureState && typeof rawStructureState === "object") {
           setStructureState({
             hull: normalizeCondition(rawStructureState.hull),
+            disk: normalizeCondition(rawStructureState.disk),
             left_arm: normalizeCondition(rawStructureState.left_arm),
             right_arm: normalizeCondition(rawStructureState.right_arm),
             legs: normalizeCondition(rawStructureState.legs),
@@ -910,6 +890,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         } else {
           setStructureState({
             hull: { state: "ok" },
+            disk: { state: "ok" },
             left_arm: { state: "ok" },
             right_arm: { state: "ok" },
             legs: { state: "ok" },
@@ -937,6 +918,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         setInstabilityBuffer([]);
         setStructureState({
           hull: { state: "ok" },
+          disk: { state: "ok" },
           left_arm: { state: "ok" },
           right_arm: { state: "ok" },
           legs: { state: "ok" },
@@ -955,16 +937,18 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, userId]);
+  }, [supabase, userId, sparesMax]);
 
   /* ---------------- Save ---------------- */
 
-  const saveWithOverrides = async (overrides?: Partial<{
-    installed_systems: InstalledSystem[];
-    structure_state: StructureState;
-    instability_buffer: number[];
-    spares_used: number;
-  }>) => {
+  const saveWithOverrides = async (
+    overrides?: Partial<{
+      installed_systems: InstalledSystem[];
+      structure_state: StructureState;
+      instability_buffer: number[];
+      spares_used: number;
+    }>,
+  ) => {
     setSaving(true);
     setError(null);
     setSavedAt(null);
@@ -1015,9 +999,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
   useDebouncedEffect(
     () => {
-      // Guard rails
       if (loading || saving || advancing) return;
-
       saveWithOverrides();
     },
     [
@@ -1031,7 +1013,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       structureState,
       sparesUsed,
     ],
-    1000, // 1 second debounce
+    1000,
     true,
   );
 
@@ -1082,6 +1064,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
     const nextStructures: StructureState = {
       hull: decrementDisabled(normalizeCondition(struct.hull)),
+      disk: decrementDisabled(normalizeCondition(struct.disk)),
       left_arm: decrementDisabled(normalizeCondition(struct.left_arm)),
       right_arm: decrementDisabled(normalizeCondition(struct.right_arm)),
       legs: decrementDisabled(normalizeCondition(struct.legs)),
@@ -1153,7 +1136,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       instability_buffer: curBuffer,
     });
 
-    if (totalExpired > 0) setBufferCriticalPopup({ open: true, y: totalExpired });
+    if (totalExpired > 0)
+      setBufferCriticalPopup({ open: true, y: totalExpired });
 
     setAdvancing(false);
   };
@@ -1228,7 +1212,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             ) : savedAt ? (
               <span>Saved: {savedAt}</span>
             ) : (
-              // keep height stable even before first save
               <span className="opacity-0">Saved: never</span>
             )}
           </div>
@@ -1239,7 +1222,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
           <Modal
             title={instabilityPopup.title}
             body={instabilityPopup.body}
-            onClose={() => setInstabilityPopup({ open: false, title: "", body: "" })}
+            onClose={() =>
+              setInstabilityPopup({ open: false, title: "", body: "" })
+            }
           />
         )}
 
@@ -1272,7 +1257,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         <ShellCard title="Generation">
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
-              <div className="text-sm text-muted-foreground">Total invested points</div>
+              <div className="text-sm text-muted-foreground">
+                Total invested points
+              </div>
               <div className="text-3xl font-semibold tabular-nums">
                 {generation}
                 <span className="text-sm font-medium text-muted-foreground">
@@ -1284,7 +1271,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             <div className="h-2 w-full overflow-hidden rounded-full border bg-background/30">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-cyan-400/70 via-indigo-400/60 to-fuchsia-400/60"
-                style={{ width: `${clamp((generation / MAX_GENERATION) * 100, 0, 100)}%` }}
+                style={{
+                  width: `${clamp((generation / MAX_GENERATION) * 100, 0, 100)}%`,
+                }}
               />
             </div>
 
@@ -1333,7 +1322,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 
                 <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
                   <span className="font-mono">{shortMod(stats[key])}</span>
-                  <span className="font-mono">{fmtSigned(abilityMod(stats[key]))}</span>
+                  <span className="font-mono">
+                    {fmtSigned(abilityMod(stats[key]))}
+                  </span>
                 </div>
               </div>
             ))}
@@ -1347,7 +1338,10 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               title="Fort"
               value={fort}
               bonuses={[
-                { label: "Damage Threshold Bonus", value: fmtSigned(damageThresholdBonus) },
+                {
+                  label: "Damage Threshold Bonus",
+                  value: fmtSigned(damageThresholdBonus),
+                },
                 { label: "Spares Bonus", value: fmtSigned(sparesBonus) },
               ]}
             />
@@ -1356,10 +1350,14 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               title="Agility"
               value={agility}
               bonuses={[
-                { label: "Armor Class Bonus", value: fmtSigned(armorClassBonus) },
+                {
+                  label: "Armor Class Bonus",
+                  value: fmtSigned(armorClassBonus),
+                },
                 {
                   label: "Movement Speed Bonus",
-                  value: moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`,
+                  value:
+                    moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`,
                 },
               ]}
             />
@@ -1369,7 +1367,10 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               value={techno}
               bonuses={[
                 { label: "Save DC Bonus", value: fmtSigned(saveDCBonus) },
-                { label: "System Capacity Bonus", value: fmtSigned(systemCapacityBonus) },
+                {
+                  label: "System Capacity Bonus",
+                  value: fmtSigned(systemCapacityBonus),
+                },
               ]}
             />
 
@@ -1378,7 +1379,10 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               value={internal}
               bonuses={[
                 { label: "Buffer Size Bonus", value: fmtSigned(bufferSizeBonus) },
-                { label: "Buffer Duration Bonus", value: fmtSigned(bufferDurationBonus) },
+                {
+                  label: "Buffer Duration Bonus",
+                  value: fmtSigned(bufferDurationBonus),
+                },
               ]}
             />
           </div>
@@ -1390,14 +1394,21 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             <div className="rounded-2xl border bg-background/20 p-4 backdrop-blur">
               <div className="text-sm font-semibold">Vitals</div>
               <div className="mt-3 grid gap-2">
-                <Row label="Damage Threshold" value={`${damageThreshold} (${fmtSigned(damageThresholdBonus)})`} />
-                <Row label="Double Damage Threshold" value={`${damageThreshold * 2}`} />
+                <Row
+                  label="Damage Threshold"
+                  value={`${damageThreshold} (${fmtSigned(damageThresholdBonus)})`}
+                />
+                <Row
+                  label="Double Damage Threshold"
+                  value={`${damageThreshold * 2}`}
+                />
 
                 <div className="rounded-xl border bg-card/40 p-3">
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-medium">Spares</div>
                     <div className="text-sm tabular-nums">
-                      <span className="font-semibold">{sparesAvailable}</span>/{sparesMax}
+                      <span className="font-semibold">{sparesAvailable}</span>/
+                      {sparesMax}
                     </div>
                   </div>
 
@@ -1440,16 +1451,27 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               <div className="mt-3 grid gap-2">
                 <Row
                   label="Movement Speed"
-                  value={`${movementSpeedFt} ft (${moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`})`}
+                  value={`${movementSpeedFt} ft (${
+                    moveSpeedBonusFt === 0 ? "+0 ft" : `+${moveSpeedBonusFt} ft`
+                  })`}
                 />
-                <Row label="Armor Class" value={`${armorClass} (${fmtSigned(armorClassBonus)})`} />
+                <Row
+                  label="Armor Class"
+                  value={`${armorClass} (${fmtSigned(armorClassBonus)})`}
+                />
               </div>
 
               <div className="mt-6 text-sm font-semibold">Offense & Control</div>
               <div className="mt-3 grid gap-2">
                 <Row label="Attack Bonus" value={fmtSigned(attackBonus)} />
-                <Row label="Save DC" value={`${saveDC} (${fmtSigned(saveDCBonus)})`} />
-                <Row label="Forward Save Bonus" value={fmtSigned(forwardSaveBonus)} />
+                <Row
+                  label="Save DC"
+                  value={`${saveDC} (${fmtSigned(saveDCBonus)})`}
+                />
+                <Row
+                  label="Forward Save Bonus"
+                  value={fmtSigned(forwardSaveBonus)}
+                />
               </div>
 
               <div className="mt-6 text-sm font-semibold">Sensors</div>
@@ -1501,7 +1523,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                       </div>
 
                       <div className="text-right">
-                        <div className="font-medium tabular-nums">{fmtSigned(total)}</div>
+                        <div className="font-medium tabular-nums">
+                          {fmtSigned(total)}
+                        </div>
                         <div className="text-xs text-muted-foreground tabular-nums">
                           {fmtSigned(mod)}
                           {isProf ? ` + ${PROF_BONUS}` : ""}
@@ -1527,7 +1551,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         <ShellCard title="Frame Specs">
           <div className="grid gap-4">
             <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border bg-background/20 p-3 backdrop-blur">
-              <div className="text-sm font-semibold">Select 4 Frame Specs</div>
+              <div className="text-sm font-semibold"></div>
 
               <div className="flex items-center gap-3">
                 <div className="text-xs text-muted-foreground tabular-nums">
@@ -1592,7 +1616,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             <div className="rounded-2xl border bg-background/20 p-3 backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm text-muted-foreground">
-                  Per-site cap: {PER_SLOT_CAP}. Total cap: {TOTAL_CAP}.
                 </div>
                 <div className="text-sm font-medium tabular-nums">
                   {getTotalCost()}/{TOTAL_CAP}
@@ -1601,53 +1624,60 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              <CoreSection
-                title="Core"
-                subtitle={coreSystemName ? coreSystemName : "Select Core System"}
-                disabled={loading || advancing}
-                coreInstabilityEnabled={coreInstabilityEnabled}
-                pending={pendingInstability === "core"}
-                onStartInstability={() => setPendingInstability("core")}
-                onCancelInstability={() => setPendingInstability(null)}
-                onConfirmInstability={async () => {
-                  setPendingInstability(null);
-                  await rollInstability("core");
-                }}
-                condition={structureState.core}
-                onRepair={() => repairStructure("core")}
-                onClick={() => setCoreModalOpen(true)}
-              />
+              {/* Render in requested order */}
+              {STRUCTURE_ORDER.map(([label, key]) => {
+                if (key === "core") {
+                  return (
+                    <CoreSection
+                      key="core"
+                      title="Core"
+                      subtitle={coreSystemName ? coreSystemName : "Select Core System"}
+                      disabled={loading || advancing}
+                      coreInstabilityEnabled={coreInstabilityEnabled}
+                      pending={pendingInstability === "core"}
+                      onStartInstability={() => setPendingInstability("core")}
+                      onCancelInstability={() => setPendingInstability(null)}
+                      onConfirmInstability={async () => {
+                        setPendingInstability(null);
+                        await rollInstability("core");
+                      }}
+                      condition={structureState.core}
+                      onRepair={() => repairStructure("core")}
+                      onClick={() => setCoreModalOpen(true)}
+                    />
+                  );
+                }
 
-              {(
-                [
-                  ["Hull", "hull"],
-                  ["Left Arm", "left_arm"],
-                  ["Right Arm", "right_arm"],
-                  ["Legs", "legs"],
-                  ["Back", "back"],
-                ] as const
-              ).map(([label, slot]) => (
-                <SectionWithInstabilityConfirm
-                  key={slot}
-                  title={label}
-                  slot={slot}
-                  subtitle={`${getSlotCost(slot)}/${PER_SLOT_CAP}`}
-                  condition={structureState[slot]}
-                  disabled={loading || advancing}
-                  pending={pendingInstability === slot}
-                  onStart={() => setPendingInstability(slot)}
-                  onCancel={() => setPendingInstability(null)}
-                  onConfirm={async () => {
-                    setPendingInstability(null);
-                    await rollInstability(slot);
-                  }}
-                  onRepair={() => repairStructure(slot)}
-                  onClick={() => {
-                    setCatalogueDefaultSlot(slot);
-                    setCatalogueOpen(true);
-                  }}
-                />
-              ))}
+                const slot = key as SystemSlot;
+
+                const subtitle =
+                  slot === "hull"
+                    ? `${getSlotCost("hull")}/${HULL_COST_CAP}`
+                    : `${getSlotCost(slot)}`;
+
+                return (
+                  <SectionWithInstabilityConfirm
+                    key={slot}
+                    title={label}
+                    slot={slot}
+                    subtitle={subtitle}
+                    condition={structureState[slot]}
+                    disabled={loading || advancing}
+                    pending={pendingInstability === slot}
+                    onStart={() => setPendingInstability(slot)}
+                    onCancel={() => setPendingInstability(null)}
+                    onConfirm={async () => {
+                      setPendingInstability(null);
+                      await rollInstability(slot);
+                    }}
+                    onRepair={() => repairStructure(slot)}
+                    onClick={() => {
+                      setCatalogueDefaultSlot(slot);
+                      setCatalogueOpen(true);
+                    }}
+                  />
+                );
+              })}
             </div>
 
             <div className="rounded-2xl border bg-background/20 p-4 backdrop-blur">
@@ -1718,7 +1748,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => useSystemById(inst.systemId, complexityTurns)}
+                                onClick={() =>
+                                  useSystemById(inst.systemId, complexityTurns)
+                                }
                                 disabled={loading || advancing || cond.state !== "ok"}
                                 title={`Use (disables for ${complexityTurns} turns)`}
                               >
@@ -1726,7 +1758,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                               </Button>
                             )}
 
-                            {(cond.state === "disabled" || cond.state === "destroyed") && (
+                            {(cond.state === "disabled" ||
+                              cond.state === "destroyed") && (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -1765,10 +1798,17 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
               </div>
 
               <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={onUnfillOne} disabled={loading || advancing || !canUnfill}>
+                <Button
+                  variant="outline"
+                  onClick={onUnfillOne}
+                  disabled={loading || advancing || !canUnfill}
+                >
                   −
                 </Button>
-                <Button onClick={onFillOne} disabled={loading || advancing || !canFill}>
+                <Button
+                  onClick={onFillOne}
+                  disabled={loading || advancing || !canFill}
+                >
                   +
                 </Button>
               </div>
@@ -1795,8 +1835,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         </ShellCard>
       </div>
 
-      {/* IMPORTANT: Render catalogue modals at the root so they behave like true full-screen overlays.
-          Also: ShellCard no longer uses overflow-hidden, so overlays won't be clipped. */}
+      {/* Modals */}
       <FrameSpecsModal
         open={frameSpecsOpen}
         onClose={() => setFrameSpecsOpen(false)}
@@ -1821,7 +1860,9 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         systems={SYSTEMS}
         defaultSlot={catalogueDefaultSlot}
         installed={installedSystems as any}
-        perSlotCap={PER_SLOT_CAP}
+        // Keep prop names compatible with your current modal; if you updated the modal earlier,
+        // ensure it enforces total cap + hull cost cap and does NOT enforce per-slot count limits.
+        hullCostCap={4 as any} // no longer used; kept for compatibility if your modal still expects it
         totalCap={TOTAL_CAP}
         getSystemCost={getSystemCost}
         getSlotCost={getSlotCost}
@@ -1866,10 +1907,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
                         d{sides}
                       </Button>
                     ))}
-                    <Button
-                      className="h-9 col-span-3"
-                      onClick={() => doRoll(rollExpr)}
-                    >
+                    <Button className="h-9 col-span-3" onClick={() => doRoll(rollExpr)}>
                       Roll
                     </Button>
                   </div>
@@ -1948,7 +1986,6 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
 /* ---------------- Small UI helpers ---------------- */
 
 function shortMod(score: number) {
-  // purely cosmetic label for the attribute tile footer
   const m = abilityMod(score);
   return m >= 0 ? `mod +${m}` : `mod ${m}`;
 }

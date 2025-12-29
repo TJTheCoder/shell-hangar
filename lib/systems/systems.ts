@@ -1,4 +1,10 @@
-export type SystemSlot = "hull" | "left_arm" | "right_arm" | "legs" | "back";
+export type SystemSlot =
+  | "hull"
+  | "disk"
+  | "left_arm"
+  | "right_arm"
+  | "back"
+  | "legs";
 
 export type SystemDef = {
   id: string;

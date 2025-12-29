@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 
 const SLOT_LABELS: Record<SystemSlot, string> = {
   hull: "Hull",
+  disk: "Disk",
   left_arm: "Left Arm",
   right_arm: "Right Arm",
   legs: "Legs",
@@ -36,12 +37,12 @@ export function SystemCatalogueModal(props: {
   installed: InstalledSystem[];
 
   // caps
-  perSlotCap: number; // 6
   totalCap: number; // 19 + systemCapacityBonus
+  hullCostCap: number; // 4
 
   // cost calculator helpers
   getSystemCost: (id: string) => number;
-  getSlotCost: (slot: SystemSlot) => number;
+  getSlotCost: (slot: SystemSlot) => number; // should return SUM of costs in that slot
   getTotalCost: () => number;
 
   // actions
@@ -53,8 +54,8 @@ export function SystemCatalogueModal(props: {
     systems,
     defaultSlot,
     installed,
-    perSlotCap,
     totalCap,
+    hullCostCap,
     getSystemCost,
     getSlotCost,
     getTotalCost,
@@ -108,8 +109,6 @@ export function SystemCatalogueModal(props: {
           <div>
             <div className="text-lg font-semibold">System Catalogue</div>
             <div className="mt-1 text-xs text-muted-foreground">
-              Install rules: max {perSlotCap} per body part · max {totalCap}{" "}
-              total (19 + System Capacity)
             </div>
           </div>
 
@@ -135,6 +134,7 @@ export function SystemCatalogueModal(props: {
               onChange={(e) => setSlot(e.target.value as SystemSlot)}
             >
               <option value="hull">Hull</option>
+              <option value="disk">Disk</option>
               <option value="left_arm">Left Arm</option>
               <option value="right_arm">Right Arm</option>
               <option value="legs">Legs</option>
@@ -145,17 +145,20 @@ export function SystemCatalogueModal(props: {
 
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-md border bg-background/20 px-3 py-2">
-            <div className="text-xs text-muted-foreground">Target slot cost</div>
+            <div className="text-xs text-muted-foreground">Structure cost</div>
             <div className="mt-1 font-medium tabular-nums">
-              {SLOT_LABELS[slot]}: {slotCost}/{perSlotCap}
+              {SLOT_LABELS[slot]}: {slotCost}
+              {slot === "hull" ? `/${hullCostCap}` : ""}
             </div>
           </div>
+
           <div className="rounded-md border bg-background/20 px-3 py-2">
             <div className="text-xs text-muted-foreground">Total cost</div>
             <div className="mt-1 font-medium tabular-nums">
               {totalCost}/{totalCap}
             </div>
           </div>
+
           <div className="rounded-md border bg-background/20 px-3 py-2">
             <div className="text-xs text-muted-foreground">Uniqueness clause</div>
             <div className="mt-1 font-medium">No duplicate systems</div>
@@ -166,20 +169,19 @@ export function SystemCatalogueModal(props: {
           <div className="grid gap-3">
             {filtered.map((sys) => {
               const alreadyInstalled = installedSet.has(sys.id);
-              const cost = sys.cost;
+              const cost = getSystemCost(sys.id);
 
-              const wouldSlot = slotCost + cost;
               const wouldTotal = totalCost + cost;
-
-              const slotOver = wouldSlot > perSlotCap;
               const totalOver = wouldTotal > totalCap;
 
-              const disabled = alreadyInstalled || slotOver || totalOver;
+              const wouldSlot = slotCost + cost;
+              const hullOver = slot === "hull" && wouldSlot > hullCostCap;
+
+              const disabled = alreadyInstalled || totalOver || hullOver;
 
               let reason: string | null = null;
               if (alreadyInstalled) reason = "Already installed.";
-              else if (slotOver)
-                reason = `Exceeds ${SLOT_LABELS[slot]} cap (${perSlotCap}).`;
+              else if (hullOver) reason = `Exceeds Hull cost cap (${hullCostCap}).`;
               else if (totalOver) reason = `Exceeds total cap (${totalCap}).`;
 
               const tags = sortedTags(sys.tags);
@@ -210,8 +212,7 @@ export function SystemCatalogueModal(props: {
                       )}
 
                       <div className="mt-2 text-xs text-muted-foreground">
-                        System Cost:{" "}
-                        <span className="font-medium">{cost}</span>
+                        System Cost: <span className="font-medium">{cost}</span>
                       </div>
                     </div>
 
@@ -240,7 +241,6 @@ export function SystemCatalogueModal(props: {
             )}
           </div>
         </div>
-
       </div>
     </div>
   );
