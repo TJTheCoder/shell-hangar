@@ -706,7 +706,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       rolls = [r1, r2];
     } else if (slot === "hull") {
       // Advantage: (advantages + 1) d6 take highest; if disabled, no advantage => 1 roll
-      const count = Math.max(1, hullAdvantages);
+      const count = Math.max(1, hullAdvantages + 1);
       rolls = Array.from({ length: count }, () => d6());
     } else {
       // Normal: 1d6
@@ -724,7 +724,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
       slot === "core"
         ? `Disadvantage: [${rolls.join(", ")}] → ${result}`
         : slot === "hull" && rolls.length > 1
-          ? `Advantage x${hullAdvantages - 1}: [${rolls.join(", ")}] → ${result}`
+          ? `Advantage x${hullAdvantages}: [${rolls.join(", ")}] → ${result}`
           : `Roll: ${result}`;
 
     // No effect on 4+
@@ -786,7 +786,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
     setInstabilityPopup({
       open: true,
       title: `Instability (${SLOT_LABELS[slot]})`,
-      body: `${rollHeader}\n${SLOT_LABELS[slot]} structure and its installed systems are now ${outcome}.`,
+      body: `${rollHeader}\n${SLOT_LABELS[slot]} structure is now ${outcome}. All systems in ${SLOT_LABELS[slot]} copy this effect.`,
     });
   };
 
@@ -1551,7 +1551,7 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
         <ShellCard title="Frame Specs">
           <div className="grid gap-4">
             <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border bg-background/20 p-3 backdrop-blur">
-              <div className="text-sm font-semibold"></div>
+              <div className="text-sm font-semibold">Select 4 Frame Specs</div>
 
               <div className="flex items-center gap-3">
                 <div className="text-xs text-muted-foreground tabular-nums">
@@ -1616,6 +1616,8 @@ export function ShellCharacterCreator({ userId }: { userId: string }) {
             <div className="rounded-2xl border bg-background/20 p-3 backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm text-muted-foreground">
+                  Install rules: no duplicates · Hull cost cap {HULL_COST_CAP} ·
+                  total cap {TOTAL_CAP}
                 </div>
                 <div className="text-sm font-medium tabular-nums">
                   {getTotalCost()}/{TOTAL_CAP}
