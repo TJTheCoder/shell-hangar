@@ -67,12 +67,6 @@ export const FRAME_SPECS: FrameSpecDef[] = [
       "At the end of your turn, note if you have rolled any instabilities. If you haven't, you can instantly repair one disabled system/structure with a remaining timer of 1.",
   },
   {
-    id: "service-optimized",
-    name: "Service-Optimized",
-    description:
-      "The amount of Spares used for repairs at a dedicated hangar or engineering bay is additionally demoted by one tier (4>2>1>0).",
-  },
-  {
     id: "camera-camouflage",
     name: "Camera Camouflage",
     description:

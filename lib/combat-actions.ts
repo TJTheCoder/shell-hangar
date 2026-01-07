@@ -71,7 +71,7 @@ export const BASE_ACTIONS: CombatAction[] = [
     name: "Mark",
     type: "AP1",
     description:
-      "You scan and mark a specific creature within range of Sensors until the end of your next turn. When another creature makes an attack against them, you can choose to grant the attacker +5 to the attack roll. Once granted, the target is no longer marked.",
+      "You scan and mark a specific creature within range of Sensors until the end of your next turn. When a creature makes an attack against them, you can choose to grant the attacker +5 to the attack roll. Once granted, the target is no longer marked. Marks can stack.",
   },
   {
     id: "shove",
